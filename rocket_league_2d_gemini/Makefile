@@ -6,3 +6,6 @@ help:
 
 run:
 	uv run python -m src.main
+
+train:
+	uv run python -m rl.train
