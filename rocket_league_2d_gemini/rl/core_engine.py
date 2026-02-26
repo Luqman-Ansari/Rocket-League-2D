@@ -61,41 +61,46 @@ class RocketSoccerLogic:
             for j in range(i + 1, len(cars)):
                 resolve_car_car(cars[i], cars[j])
                 
-        # 3. Check Goals & REWARD SHAPING
-        reward = -0.01 # Base Time penalty
+        # ==========================================
+        # STAGE 1 CURRICULUM: THE BALL CHASER
+        # ==========================================
+        reward = 0.0 
         done = False
         
-        # --- NEW: DENSE REWARDS ---
-        dist_to_ball = math.hypot(self.agent.x - self.ball.x, self.agent.y - self.ball.y)
+        # Calculate vector to the ball
+        dx = self.ball.x - self.agent.x
+        dy = self.ball.y - self.agent.y
+        dist_to_ball = math.hypot(dx, dy)
         
-        # A. Distance Reward (Proximity)
-        # Closer = higher reward. Maxes out around +0.05 per frame
-        reward += (1.0 / (dist_to_ball + 1.0)) * 0.5 
+        if dist_to_ball > 0:
+            # A. THE TRACKING REWARD (The Compass)
+            # Dot product: Are we driving TOWARD the ball?
+            # Positive reward if driving towards, negative if driving away.
+            velocity_towards_ball = (self.agent.vx * dx + self.agent.vy * dy) / dist_to_ball
+            reward += velocity_towards_ball * 0.05
         
-        # B. Touch Reward
-        # If distance is less than combined radii, they are touching
-        if dist_to_ball < (self.agent.radius + self.ball.radius):
-            reward += 2.0  
+        # B. THE TOUCH REWARD (The Primary Goal right now)
+        if dist_to_ball <= (self.agent.radius + self.ball.radius + 2):
+            reward += 5.0  # Huge reward just for making contact!
             
-        # C. Momentum Reward
-        # Reward the bot if the ball is moving towards the right side (positive x velocity)
-        if self.ball.vx > 1.0:
-            reward += 0.05
-        # --------------------------
-        
-        # 4. Check Goals
-        # Red Goal (Agent Scored)
+            # Bonus: Did it hit the ball towards the right side (opponent's side)?
+            if self.ball.vx > 0:
+                reward += 2.0 
+
+        # C. THE GOAL REWARD (Still keep this so it knows what the ultimate objective is)
         if self.ball.x + self.ball.radius > WIDTH and GOAL_TOP_Y < self.ball.y < GOAL_BOTTOM_Y:
             self.score_agent += 1
-            reward += 10.0 # Massive win reward
-            done = True
-        # Blue Goal (Opponent Scored)
-        elif self.ball.x - self.ball.radius < 0 and GOAL_TOP_Y < self.ball.y < GOAL_BOTTOM_Y:
-            self.score_opponent += 1
-            reward -= 10.0 # Massive loss penalty
+            reward += 50.0 # Massive jackpot
             done = True
             
-        # Time limit check
+        # D. OPPONENT SCORED (Fear removed!)
+        elif self.ball.x - self.ball.radius < 0 and GOAL_TOP_Y < self.ball.y < GOAL_BOTTOM_Y:
+            self.score_opponent += 1
+            reward += 0.0 # REMOVED the -10 penalty. We don't want it playing defense yet.
+            done = True
+            
+        # Time limit check (Keep penalty small so it doesn't just panic)
+        reward -= 0.01 
         if self.frames_passed >= self.max_frames:
             done = True
 
