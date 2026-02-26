@@ -72,6 +72,54 @@ class Car:
             pygame.draw.circle(surf, self.color, (int(self.x), int(self.y)), self.radius)
             pygame.draw.circle(surf, BLACK, (int(self.x), int(self.y)), 6)
 
+# --- ADD THIS TO THE BOTTOM OF objects.py ---
+
+class SimpleAICar(Car):
+    """A hardcoded bot that just chases the ball."""
+    def __init__(self, x, y, color, texture_key, friction=CAR_FRICTION):
+        # We pass None for controls since a human won't use this
+        super().__init__(x, y, color, None, texture_key, friction)
+
+    def chase_ball(self, ball):
+        dx = ball.x - self.x
+        dy = ball.y - self.y
+        dist = math.hypot(dx, dy)
+        
+        if dist > 0:
+            # Apply force in the direction of the ball
+            self.vx += (dx/dist) * self.speed_power * 0.8
+            self.vy += (dy/dist) * self.speed_power * 0.8
+            
+        self.limit_speed()
+        self.update()
+
+class TrainedAICar(Car):
+    """The Reinforcement Learning Agent."""
+    def __init__(self, x, y, color, texture_key, friction=CAR_FRICTION):
+        super().__init__(x, y, color, None, texture_key, friction)
+
+    def apply_ai_action(self, action):
+        """
+        0: Do Nothing, 1: Up, 2: Down, 3: Left, 4: Right
+        """
+        ax = ay = 0
+        self.boost_active = False # Keep it simple for now
+        
+        if action == 1:
+            ay -= self.speed_power
+        elif action == 2:
+            ay += self.speed_power * 0.8
+        elif action == 3:
+            ax -= self.speed_power * 0.8
+        elif action == 4:
+            ax += self.speed_power * 0.8
+
+        self.vx += ax
+        self.vy += ay
+        
+        self.limit_speed()
+        self.update()
+
 class Goalkeeper(Car):
     def __init__(self, x, y, color, side, texture_key, friction=CAR_FRICTION):
         super().__init__(x, y, color, None, texture_key, friction)
