@@ -163,16 +163,16 @@ class Match:
         self.ball = Ball(self.ball_texture, self.friction_ball)
     
     def _load_ai_model(self, model_name, player='p1'):
-        """Load trained AI model if available."""
+        """Load trained AI model using absolute pathing."""
         if not SB3_AVAILABLE:
             print(f"stable_baselines3 not available for {player}, using Basic AI")
-            if player == 'p1':
-                self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
-            else:
-                self.p2 = SimpleAICar(WIDTH-200, HEIGHT//2, RED, 'car_red', self.friction_car)
             return
         
-        model_path = os.path.join("..", "rl", "versions", f"{model_name}.zip")
+        # Determine the absolute path to the project root (one level up from src/)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(current_dir)
+        model_path = os.path.join(project_root, "rl", "versions", f"{model_name}.zip")
+
         if os.path.exists(model_path):
             try:
                 if player == 'p1':
@@ -182,18 +182,10 @@ class Match:
                     self.rl_model_p2 = PPO.load(model_path)
                     print(f"Loaded AI model for p2: {model_name}")
             except Exception as e:
-                print(f"Error loading model {model_name} for {player}: {e}")
-                if player == 'p1':
-                    self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
-                else:
-                    self.p2 = SimpleAICar(WIDTH-200, HEIGHT//2, RED, 'car_red', self.friction_car)
+                print(f"Error loading model {model_name}: {e}")
         else:
-            print(f"Model file not found for {player}: {model_path}")
-            if player == 'p1':
-                self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
-            else:
-                self.p2 = SimpleAICar(WIDTH-200, HEIGHT//2, RED, 'car_red', self.friction_car)
-    
+            print(f"Model file not found: {model_path}")
+
     def run(self):
         """Main match loop. Returns action string: 'MENU', 'RESTART', or 'QUIT'."""
         while True:
