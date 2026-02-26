@@ -3,5 +3,10 @@
     "python.formatting.provider": "none",
     "python.linting.enabled": false,
     "python.linting.flake8Enabled": false,
-    "python.linting.pylintEnabled": false
+    "python.linting.pylintEnabled": false,
+    "flake8.enabled": false,
+    "[python]": {
+        "editor.formatOnSave": false,
+        "editor.codeActionsOnSave": {}
+    }
 }
