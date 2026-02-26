@@ -1,9 +1,18 @@
 # game.py
 import pygame
+import os
+import numpy as np
 from settings import *
 import assets_loader
-from objects import Car, Goalkeeper, Ball
+from objects import Car, Goalkeeper, Ball, SimpleAICar, TrainedAICar
 from physics import resolve_car_ball, resolve_car_car
+
+try:
+    from stable_baselines3 import PPO
+    SB3_AVAILABLE = True
+except ImportError:
+    SB3_AVAILABLE = False
+    print("Warning: stable_baselines3 not installed. Trained models will not work.")
 
 def draw_hud(screen, score, time_left, winner_text=""):
     # Score
@@ -41,15 +50,51 @@ def run_match(screen, clock, mode_config):
     ball_tex = mode_config['ball_texture']
     field_tex_key = mode_config.get('field_texture', 'field')
     duration = mode_config['duration']
+    opponent_type = mode_config.get('opponent_type', 'HUMAN')
     
-    # 2. Init Objects
-    p1 = Car(200, HEIGHT//2, BLUE, 
-             {'up':pygame.K_w,'down':pygame.K_s,'left':pygame.K_a,'right':pygame.K_d,'boost':pygame.K_LSHIFT}, 
-             'car_blue', friction_car)
+    # 2. Init Players based on Opponent Type
+    rl_model = None  # For trained AI models
     
-    p2 = Car(WIDTH-200, HEIGHT//2, RED, 
-             {'up':pygame.K_UP,'down':pygame.K_DOWN,'left':pygame.K_LEFT,'right':pygame.K_RIGHT,'boost':pygame.K_m},   # K_RSHIFT
-             'car_red', friction_car)
+    if opponent_type == "HUMAN":
+        # Both players are human-controlled
+        p1 = Car(200, HEIGHT//2, BLUE, 
+                 {'up':pygame.K_w,'down':pygame.K_s,'left':pygame.K_a,'right':pygame.K_d,'boost':pygame.K_LSHIFT}, 
+                 'car_blue', friction_car)
+        
+        p2 = Car(WIDTH-200, HEIGHT//2, RED, 
+                 {'up':pygame.K_UP,'down':pygame.K_DOWN,'left':pygame.K_LEFT,'right':pygame.K_RIGHT,'boost':pygame.K_m},
+                 'car_red', friction_car)
+    else:
+        # p2 (Red/Right) is Human, p1 (Blue/Left) is Bot
+        p2 = Car(WIDTH-200, HEIGHT//2, RED, 
+                 {'up':pygame.K_UP,'down':pygame.K_DOWN,'left':pygame.K_LEFT,'right':pygame.K_RIGHT,'boost':pygame.K_m},
+                 'car_red', friction_car)
+        
+        if opponent_type == "Basic":
+            # Hardcoded simple AI
+            p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', friction_car)
+        else:
+            # Trained RL model
+            p1 = TrainedAICar(200, HEIGHT//2, BLUE, 'car_blue', friction_car)
+            
+            # Load the model
+            if SB3_AVAILABLE:
+                model_path = os.path.join("..", "rl", "versions", f"{opponent_type}.zip")
+                if os.path.exists(model_path):
+                    try:
+                        rl_model = PPO.load(model_path)
+                        print(f"Loaded AI model: {opponent_type}")
+                    except Exception as e:
+                        print(f"Error loading model {opponent_type}: {e}")
+                        # Fallback to basic AI
+                        p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', friction_car)
+                else:
+                    print(f"Model file not found: {model_path}")
+                    # Fallback to basic AI
+                    p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', friction_car)
+            else:
+                print("stable_baselines3 not available, using Basic AI")
+                p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', friction_car)
     
     gk1 = Goalkeeper(50, HEIGHT//2, DARK_BLUE, 'left', 'gk_blue', friction_car)
     gk2 = Goalkeeper(WIDTH-50, HEIGHT//2, DARK_RED, 'right', 'gk_red', friction_car)
@@ -110,10 +155,54 @@ def run_match(screen, clock, mode_config):
 
         if game_state == "PLAYING":
             keys = pygame.key.get_pressed()
-            p1.handle(keys); p2.handle(keys)
+            
+            # Handle player controls
+            if opponent_type == "HUMAN":
+                # Both players are human
+                p1.handle(keys)
+                p2.handle(keys)
+            else:
+                # Only p2 (Red) is human
+                p2.handle(keys)
             
             if goal_timer == 0:
-                p1.update(); p2.update()
+                # Handle AI bot actions
+                if opponent_type != "HUMAN":
+                    if isinstance(p1, SimpleAICar):
+                        # Basic hardcoded bot
+                        p1.chase_ball(ball)
+                    elif isinstance(p1, TrainedAICar) and rl_model is not None:
+                        # Trained RL model
+                        # Create observation array (14 float32 values)
+                        max_speed = 7.0  # Should match Car.max_speed
+                        obs = np.array([
+                            p1.x / WIDTH,
+                            p1.y / HEIGHT,
+                            p1.vx / max_speed,
+                            p1.vy / max_speed,
+                            p2.x / WIDTH,
+                            p2.y / HEIGHT,
+                            p2.vx / max_speed,
+                            p2.vy / max_speed,
+                            ball.x / WIDTH,
+                            ball.y / HEIGHT,
+                            ball.vx / 15.0,
+                            ball.vy / 15.0,
+                            gk1.y / HEIGHT,
+                            gk2.y / HEIGHT
+                        ], dtype=np.float32)
+                        
+                        # Get action from model
+                        action, _states = rl_model.predict(obs, deterministic=True)
+                        p1.apply_ai_action(action)
+                    else:
+                        # Fallback: just update position
+                        p1.update()
+                else:
+                    # Both human players, regular update
+                    p1.update()
+                
+                p2.update()
                 gk1.update_ai(ball); gk2.update_ai(ball)
                 ball.update()
 
