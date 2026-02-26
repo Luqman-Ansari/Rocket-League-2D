@@ -2,8 +2,8 @@
 import pygame
 import math
 import random
-from settings import *
-import assets_loader
+from src.settings import *
+from src.assets_loader import assets_loader
 
 def clamp(v, a, b): return max(a, min(b, v))
 

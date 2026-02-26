@@ -2,11 +2,13 @@
 import pygame
 import math
 import os
-from settings import *
-import assets_loader
+from src.settings import *
+from src.assets_loader import assets_loader
 
-# --- UI ELEMENT CLASSES ---
+
 class Button:
+    """Interactive button with hover animations."""
+    
     def __init__(self, text, x, y, w=300, h=60, action=None):
         self.text = text
         self.rect = pygame.Rect(x, y, w, h)
@@ -15,6 +17,7 @@ class Button:
         self.scale = 1.0
         
     def draw(self, screen):
+        """Draw button with hover animation."""
         # Hover Animation Logic
         target_scale = 1.1 if self.hovered else 1.0
         self.scale += (target_scale - self.scale) * 0.2
@@ -42,87 +45,460 @@ class Button:
         screen.blit(text_surf, text_rect)
 
     def check_input(self, event):
-        # 1. Handle Hover Effect (Visuals)
+        """Handle mouse events for the button."""
+        # Handle Hover Effect (Visuals)
         if event.type == pygame.MOUSEMOTION:
             is_over = self.rect.collidepoint(event.pos)
             if is_over and not self.hovered:
-                if assets_loader.SOUNDS['hover']: assets_loader.SOUNDS['hover'].play()
+                if assets_loader.SOUNDS['hover']:
+                    assets_loader.SOUNDS['hover'].play()
             self.hovered = is_over
             
-        # 2. Handle Click (Action)
+        # Handle Click (Action)
         if event.type == pygame.MOUSEBUTTONDOWN:
-            # We check collidepoint directly here to be robust against fast clicks
             if self.rect.collidepoint(event.pos) and self.action:
-                if assets_loader.SOUNDS['click']: assets_loader.SOUNDS['click'].play()
+                if assets_loader.SOUNDS['click']:
+                    assets_loader.SOUNDS['click'].play()
                 return self.action
         return None
 
-# --- MENU FUNCTIONS ---
 
-def draw_background(screen):
-    bg = assets_loader.GRAPHICS.get('menu_bg')
-    if bg:
-        screen.blit(bg, (0,0))
-    else:
-        # Dynamic Gradient Fallback
-        for i in range(HEIGHT):
-            r = 20 + (i * 40 // HEIGHT)
-            g = 20 + (i * 40 // HEIGHT)
-            b = 40 + (i * 40 // HEIGHT)
-            pygame.draw.line(screen, (r,g,b), (0,i), (WIDTH, i))
-
-def main_menu_loop(screen, clock):
-    """ Main Menu Entry Point. Returns configuration dict or None (Quit) """
+class MenuManager:
+    """Manages all menu screens and navigation."""
     
-    state = "MAIN" 
-    selected_mode_key = "HOCKEY"    # Default Game Mode
-    duration_input_text = "200"
-    opponent_type = "HUMAN"  # Track opponent selection 
+    def __init__(self, screen, clock):
+        self.screen = screen
+        self.clock = clock
+        
+        # Menu state
+        self.state = "MAIN"
+        self.selected_mode_key = "HOCKEY"
+        self.duration_input_text = "200"
+        self.opponent_type = "HUMAN"
+        
+        # Setup UI elements
+        center_x = WIDTH // 2
+        start_y = 215
+        gap = 70
+        
+        # Main Menu Buttons
+        self.btns_main = [
+            Button("PLAY MATCH", center_x - 150, start_y, action="PLAYMODE"),
+            Button("GAME MODE", center_x - 150, start_y + gap, action="MODE"),
+            Button("CONTROLS", center_x - 150, start_y + gap*2, action="CONTROLS"),
+            Button("HOW TO PLAY", center_x - 150, start_y + gap*3, action="HELP"),
+            Button("EXIT", center_x - 150, start_y + gap*4, action="EXIT")
+        ]
+        
+        # Navigation Buttons
+        self.btn_back = Button("BACK", center_x - 100, HEIGHT - 100, 200, 60, action="BACK")
+        self.btn_play = Button("P L A Y", center_x - 100, HEIGHT - 200, 200, 60, action="PLAY")
+        
+        # Play Mode Buttons
+        self.btns_playmode = [
+            Button("1 PLAYER (VS BOT)", center_x - 200, HEIGHT//2 - 60, 400, 60, action="BOTSELECT"),
+            Button("2 PLAYER (LOCAL)", center_x - 200, HEIGHT//2 + 20, 400, 60, action="2PLAYER")
+        ]
+        
+        # Bot Selection Buttons (dynamically generated)
+        self.bot_buttons = []
+        
+        # Mode selection rects and animations
+        self.mode_rects = {
+            'SOCCER': pygame.Rect(40, 175, 440, 295),
+            'HOCKEY': pygame.Rect(520, 175, 440, 295)
+        }
+        self.mode_scales = {'SOCCER': 1.0, 'HOCKEY': 1.0}
     
-    center_x = WIDTH // 2
-    start_y = 215
-    gap = 70
+    def show(self):
+        """Show the menu and return game configuration or None (quit)."""
+        while True:
+            self._draw()
+            
+            result = self._handle_events()
+            # Only return if we got a valid result (None for quit, dict for game start)
+            if result is None or isinstance(result, dict):
+                return result
+            
+            pygame.display.flip()
+            self.clock.tick(60)
     
-    # Main Menu Buttons
-    btns_main = [
-        Button("PLAY MATCH", center_x - 150, start_y, action="PLAYMODE"),
-        Button("GAME MODE", center_x - 150, start_y + gap, action="MODE"),
-        Button("CONTROLS", center_x - 150, start_y + gap*2, action="CONTROLS"),
-        Button("HOW TO PLAY", center_x - 150, start_y + gap*3, action="HELP"),
-        Button("EXIT", center_x - 150, start_y + gap*4, action="EXIT")
-    ]
+    def _draw(self):
+        """Draw the current menu screen."""
+        self.screen.fill(BLACK)
+        self._draw_background()
+        self._draw_header()
+        self._draw_content()
     
-    # Back Button
-    btn_back = Button("BACK", center_x - 100, HEIGHT - 100, 200, 60, action="BACK")
-
-    # Play Button
-    btn_play = Button("P L A Y", center_x - 100, HEIGHT - 200, 200, 60, action="PLAY")
+    def _draw_background(self):
+        """Draw menu background."""
+        bg = assets_loader.GRAPHICS.get('menu_bg')
+        if bg:
+            self.screen.blit(bg, (0, 0))
+        else:
+            # Dynamic Gradient Fallback
+            for i in range(HEIGHT):
+                r = 20 + (i * 40 // HEIGHT)
+                g = 20 + (i * 40 // HEIGHT)
+                b = 40 + (i * 40 // HEIGHT)
+                pygame.draw.line(self.screen, (r, g, b), (0, i), (WIDTH, i))
     
-    # Play Mode Buttons (1P vs Bot / 2P Local)
-    btns_playmode = [
-        Button("1 PLAYER (VS BOT)", center_x - 200, HEIGHT//2 - 60, 400, 60, action="BOTSELECT"),
-        Button("2 PLAYER (LOCAL)", center_x - 200, HEIGHT//2 + 20, 400, 60, action="2PLAYER")
-    ]
+    def _draw_header(self):
+        """Draw the header/title for current screen."""
+        logo = assets_loader.GRAPHICS.get('logo')
+        
+        if self.state == "MAIN" and logo:
+            scale = 0.37 + 0.04 * math.sin(pygame.time.get_ticks() * 0.003)
+            w = int(logo.get_width() * scale)
+            h = int(logo.get_height() * scale)
+            logo_scaled = pygame.transform.scale(logo, (w, h))
+            self.screen.blit(logo_scaled, (WIDTH//2 - w//2, 50))
+        else:
+            title_text = {
+                "MAIN": "ROCKET SOCCER",
+                "MODE": "SELECT GAME MODE",
+                "CONTROLS": "CONTROLS",
+                "HELP": "HOW TO PLAY",
+                "DURATION": "MATCH SETUP",
+                "PLAYMODE": "SELECT PLAY MODE",
+                "BOTSELECT": "SELECT OPPONENT"
+            }.get(self.state, "ROCKET SOCCER")
+            
+            t_surf = assets_loader.FONTS['title'].render(title_text, True, WHITE)
+            self.screen.blit(t_surf, (WIDTH//2 - t_surf.get_width()//2, 50))
     
-    # Bot Selection Buttons (dynamically generated)
-    bot_buttons = []
-
-    # Play Button
-    btn_play = Button("P L A Y", center_x - 100, HEIGHT - 200, 200, 60, action="PLAY")
-
-    mode_rects = {
-        'SOCCER': pygame.Rect(40, 175, 440, 295),
-        'HOCKEY': pygame.Rect(520, 175, 440, 295)
-    }
-    mode_scales = {'SOCCER': 1.0, 'HOCKEY': 1.0}
+    def _draw_content(self):
+        """Draw content based on current state."""
+        if self.state == "MAIN":
+            self._draw_main_menu()
+        elif self.state == "DURATION":
+            self._draw_duration_input()
+        elif self.state == "MODE":
+            self._draw_mode_selection()
+        elif self.state == "CONTROLS":
+            self._draw_controls()
+        elif self.state == "HELP":
+            self._draw_help()
+        elif self.state == "PLAYMODE":
+            self._draw_playmode_selection()
+        elif self.state == "BOTSELECT":
+            self._draw_bot_selection()
     
-    # Function to scan for bot models
-    def scan_bot_models():
-        """Scans rl/versions/ for .zip files and creates bot buttons"""
+    def _draw_main_menu(self):
+        """Draw main menu buttons."""
+        for btn in self.btns_main:
+            btn.draw(self.screen)
+        v_surf = assets_loader.FONTS['body'].render("v2.2 Stable", True, LIGHT_GRAY)
+        self.screen.blit(v_surf, (WIDTH - 120, HEIGHT - 30))
+    
+    def _draw_duration_input(self):
+        """Draw duration input screen."""
+        lbl = assets_loader.FONTS['ui'].render("ENTER MATCH DURATION (Seconds):", True, BLUE)
+        self.screen.blit(lbl, (WIDTH//2 - lbl.get_width()//2, HEIGHT//2 - 100))
+        
+        input_rect = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 - 40, 300, 80)
+        pygame.draw.rect(self.screen, (0, 0, 0, 150), input_rect, border_radius=10)
+        pygame.draw.rect(self.screen, GREEN, input_rect, 3, border_radius=10)
+        
+        txt_surf = assets_loader.FONTS['title'].render(self.duration_input_text, True, WHITE)
+        self.screen.blit(txt_surf, (input_rect.centerx - txt_surf.get_width()//2, 
+                                    input_rect.centery - txt_surf.get_height()//2))
+        
+        inst = assets_loader.FONTS['body'].render("Press ENTER or click PLAY to Start Match", True, ORANGE)
+        self.screen.blit(inst, (WIDTH//2 - inst.get_width()//2, HEIGHT//2 + 60))
+        
+        self.btn_play.draw(self.screen)
+        self.btn_back.draw(self.screen)
+    
+    def _draw_mode_selection(self):
+        """Draw game mode selection screen."""
+        mouse_pos = pygame.mouse.get_pos()
+        
+        for key, base_rect in self.mode_rects.items():
+            mode = GAME_MODES[key]
+            is_hover = base_rect.collidepoint(mouse_pos)
+            is_selected = (self.selected_mode_key == key)
+            
+            target_scale = 1.05 if is_hover else 1.0
+            self.mode_scales[key] += (target_scale - self.mode_scales[key]) * 0.15
+            current_scale = self.mode_scales[key]
+            
+            scaled_w = int(base_rect.width * current_scale)
+            scaled_h = int(base_rect.height * current_scale)
+            draw_rect = pygame.Rect(0, 0, scaled_w, scaled_h)
+            draw_rect.center = base_rect.center
+            
+            # Draw field texture
+            field_tex = assets_loader.GRAPHICS.get(mode['field_texture'])
+            if field_tex:
+                thumb = pygame.transform.scale(field_tex, (draw_rect.width, draw_rect.height))
+                self.screen.blit(thumb, draw_rect.topleft)
+            else:
+                pygame.draw.rect(self.screen, GRAY, draw_rect)
+            
+            # Overlay
+            overlay = pygame.Surface((draw_rect.width, draw_rect.height), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 160))
+            self.screen.blit(overlay, draw_rect.topleft)
+            
+            # Border
+            border_color = ORANGE if is_selected else (WHITE if is_hover else LIGHT_GRAY)
+            border_width = 4 if is_selected else 2
+            pygame.draw.rect(self.screen, border_color, draw_rect, border_width)
+            
+            # Ball icon
+            ball_img = assets_loader.GRAPHICS.get(mode['ball_texture'])
+            if ball_img:
+                ball_img = pygame.transform.scale(ball_img, (64, 64))
+                self.screen.blit(ball_img, (draw_rect.centerx - 32, draw_rect.top + 40))
+            
+            # Mode name
+            name_surf = assets_loader.FONTS['ui'].render(mode['name'], True, WHITE)
+            self.screen.blit(name_surf, (draw_rect.centerx - name_surf.get_width()//2, draw_rect.top + 120))
+            
+            # Description
+            desc_words = mode['desc'].split(' ')
+            line1 = " ".join(desc_words[:len(desc_words)//2])
+            line2 = " ".join(desc_words[len(desc_words)//2:])
+            
+            d1 = assets_loader.FONTS['body'].render(line1, True, LIGHT_GRAY)
+            d2 = assets_loader.FONTS['body'].render(line2, True, LIGHT_GRAY)
+            self.screen.blit(d1, (draw_rect.centerx - d1.get_width()//2, draw_rect.top + 180))
+            self.screen.blit(d2, (draw_rect.centerx - d2.get_width()//2, draw_rect.top + 210))
+        
+        self.btn_back.draw(self.screen)
+    
+    def _draw_controls(self):
+        """Draw controls screen."""
+        y = 160
+        lines = [
+            "PLAYER 1 (BLUE): W,A,S,D + L-SHIFT (Boost)",
+            "PLAYER 2 (RED): ARROWS + R-SHIFT (Boost)",
+            "",
+            "P / ESC: Pause Game",
+            "R: Restart Match (Paused)",
+            "M: Main Menu (Paused)",
+            "Q: Quit Game (Paused)"
+        ]
+        for line in lines:
+            if "PLAYER 1" in line:
+                surf = assets_loader.FONTS['ui_small'].render(line, True, BLUE)
+            elif "PLAYER 2" in line:
+                surf = assets_loader.FONTS['ui_small'].render(line, True, RED)
+            else:
+                surf = assets_loader.FONTS['ui_small'].render(line, True, LIGHT_GRAY)
+            self.screen.blit(surf, (WIDTH//2 - surf.get_width()//2, y))
+            y += 30 if line == "" else 50
+        
+        self.btn_back.draw(self.screen)
+    
+    def _draw_help(self):
+        """Draw help/instructions screen."""
+        y = 190
+        rules = [
+            "OBJECTIVE: Score more goals than opponent!",
+            "1. Each team has 1 Player + 1 AI Goalkeeper",
+            "2. Hold SHIFT to Boost (1.5x Speed)",
+            "3. Collisions transfer momentum",
+            "4. Hockey Mode has low friction (slippery!)",
+            "",
+            "Good luck!"
+        ]
+        for line in rules:
+            surf = assets_loader.FONTS['body'].render(line, True, LIGHT_GRAY)
+            self.screen.blit(surf, (230, y))
+            y += 40
+        
+        self.btn_back.draw(self.screen)
+    
+    def _draw_playmode_selection(self):
+        """Draw play mode selection screen."""
+        for btn in self.btns_playmode:
+            btn.draw(self.screen)
+        
+        info = assets_loader.FONTS['body'].render("Choose your play mode", True, LIGHT_GRAY)
+        self.screen.blit(info, (WIDTH//2 - info.get_width()//2, HEIGHT//2 - 120))
+        
+        self.btn_back.draw(self.screen)
+    
+    def _draw_bot_selection(self):
+        """Draw bot selection screen."""
+        for btn in self.bot_buttons:
+            btn.draw(self.screen)
+        
+        info = assets_loader.FONTS['body'].render("Select your AI opponent", True, LIGHT_GRAY)
+        self.screen.blit(info, (WIDTH//2 - info.get_width()//2, 150))
+        
+        hint = assets_loader.FONTS['body'].render(f"Selected: {self.opponent_type}", True, ORANGE)
+        self.screen.blit(hint, (WIDTH//2 - hint.get_width()//2, HEIGHT - 160))
+        
+        self.btn_back.draw(self.screen)
+    
+    def _handle_events(self):
+        """Handle all menu events. Returns config dict when starting game, None to quit, False to continue."""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return None
+            
+            # Global back button handler
+            if self.state in ["MODE", "CONTROLS", "HELP", "DURATION", "PLAYMODE", "BOTSELECT"]:
+                if self.btn_back.check_input(event) == "BACK":
+                    self._navigate_back()
+                    continue
+            
+            # State-specific handlers
+            result = self._handle_state_events(event)
+            if result is not None and result is not False:  # Only propagate meaningful results
+                return result
+        
+        return False  # Continue showing menu
+    
+    def _navigate_back(self):
+        """Handle back navigation based on current state."""
+        if self.state == "BOTSELECT":
+            self.state = "PLAYMODE"
+        elif self.state == "PLAYMODE":
+            self.state = "MAIN"
+        elif self.state == "DURATION":
+            self.state = "PLAYMODE"
+        else:
+            self.state = "MAIN"
+    
+    def _handle_state_events(self, event):
+        """Handle events specific to current state."""
+        if self.state == "MAIN":
+            return self._handle_main_events(event)
+        elif self.state == "PLAYMODE":
+            return self._handle_playmode_events(event)
+        elif self.state == "BOTSELECT":
+            return self._handle_botselect_events(event)
+        elif self.state == "DURATION":
+            return self._handle_duration_events(event)
+        elif self.state == "MODE":
+            return self._handle_mode_events(event)
+        elif self.state in ["CONTROLS", "HELP"]:
+            return self._handle_info_screen_events(event)
+        
+        return False
+    
+    def _handle_main_events(self, event):
+        """Handle main menu events."""
+        for btn in self.btns_main:
+            res = btn.check_input(event)
+            if res == "PLAYMODE":
+                self.state = "PLAYMODE"
+            elif res == "MODE":
+                self.state = "MODE"
+            elif res == "CONTROLS":
+                self.state = "CONTROLS"
+            elif res == "HELP":
+                self.state = "HELP"
+            elif res == "EXIT":
+                return None
+        return False
+    
+    def _handle_playmode_events(self, event):
+        """Handle play mode selection events."""
+        for btn in self.btns_playmode:
+            res = btn.check_input(event)
+            if res == "BOTSELECT":
+                self.bot_buttons = self._scan_bot_models()
+                self.state = "BOTSELECT"
+            elif res == "2PLAYER":
+                self.opponent_type = "HUMAN"
+                self.state = "DURATION"
+        
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.state = "MAIN"
+        
+        return False
+    
+    def _handle_botselect_events(self, event):
+        """Handle bot selection events."""
+        for btn in self.bot_buttons:
+            res = btn.check_input(event)
+            if res and res.startswith("BOT:"):
+                self.opponent_type = res.split(":", 1)[1]
+                self.state = "DURATION"
+        
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.state = "PLAYMODE"
+        
+        return False
+    
+    def _handle_duration_events(self, event):
+        """Handle duration input events."""
+        start_match = False
+        
+        # Check button click
+        if self.btn_play.check_input(event) == "PLAY":
+            start_match = True
+        
+        # Handle keyboard input
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                start_match = True
+            elif event.key == pygame.K_BACKSPACE:
+                self.duration_input_text = self.duration_input_text[:-1]
+            elif event.key == pygame.K_ESCAPE:
+                self.state = "MAIN"
+            elif event.unicode.isdigit() and len(self.duration_input_text) < 4:
+                self.duration_input_text += event.unicode
+        
+        # Start match if triggered
+        if start_match:
+            return self._create_game_config()
+        
+        return False
+    
+    def _handle_mode_events(self, event):
+        """Handle mode selection events."""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.mode_rects['SOCCER'].collidepoint(event.pos):
+                self.selected_mode_key = 'SOCCER'
+                if assets_loader.SOUNDS['click']:
+                    assets_loader.SOUNDS['click'].play()
+            elif self.mode_rects['HOCKEY'].collidepoint(event.pos):
+                self.selected_mode_key = 'HOCKEY'
+                if assets_loader.SOUNDS['click']:
+                    assets_loader.SOUNDS['click'].play()
+        
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.state = "MAIN"
+        
+        return False
+    
+    def _handle_info_screen_events(self, event):
+        """Handle controls/help screen events."""
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.state = "MAIN"
+        return False
+    
+    def _create_game_config(self):
+        """Create game configuration dictionary."""
+        final_config = GAME_MODES[self.selected_mode_key].copy()
+        
+        try:
+            d = int(self.duration_input_text)
+            d = max(10, min(9999, d))  # Clamp between 10 and 9999
+            final_config['duration'] = d
+        except ValueError:
+            final_config['duration'] = 200
+        
+        final_config['opponent_type'] = self.opponent_type
+        
+        if assets_loader.SOUNDS['click']:
+            assets_loader.SOUNDS['click'].play()
+        
+        return final_config
+    
+    def _scan_bot_models(self):
+        """Scan for available bot models and create selection buttons."""
         buttons = []
         y_offset = 200
+        center_x = WIDTH // 2
         
-        # Always add "Basic" hardcoded bot first
+        # Always add basic bot first
         buttons.append(Button("Basic Bot", center_x - 150, y_offset, 300, 50, action="BOT:Basic"))
         y_offset += 60
         
@@ -130,299 +506,19 @@ def main_menu_loop(screen, clock):
         versions_path = os.path.join("..", "rl", "versions")
         if os.path.exists(versions_path) and os.path.isdir(versions_path):
             zip_files = [f for f in os.listdir(versions_path) if f.endswith('.zip')]
-            zip_files.sort()  # Sort alphabetically
+            zip_files.sort()
             
             for zip_file in zip_files:
-                # Remove .zip extension for display
                 model_name = zip_file[:-4]
-                buttons.append(Button(f"Model: {model_name}", center_x - 150, y_offset, 300, 50, action=f"BOT:{model_name}"))
+                buttons.append(Button(f"Model: {model_name}", center_x - 150, y_offset, 300, 50, 
+                                     action=f"BOT:{model_name}"))
                 y_offset += 60
         
         return buttons
 
-    while True:
-        screen.fill(BLACK)
-        draw_background(screen)
-        
-        # --- HEADER ---
-        logo = assets_loader.GRAPHICS.get('logo')
-        
-        if state == "MAIN" and logo:
-            scale = 0.37 + 0.04 * math.sin(pygame.time.get_ticks() * 0.003)
-            w = int(logo.get_width() * scale)
-            h = int(logo.get_height() * scale)
-            logo_scaled = pygame.transform.scale(logo, (w, h))
-            screen.blit(logo_scaled, (WIDTH//2 - w//2, 50))
-        else:
-            title_text = "ROCKET SOCCER"
-            if state == "MODE": title_text = "SELECT GAME MODE"
-            elif state == "CONTROLS": title_text = "CONTROLS"
-            elif state == "HELP": title_text = "HOW TO PLAY"
-            elif state == "DURATION": title_text = "MATCH SETUP"
-            elif state == "PLAYMODE": title_text = "SELECT PLAY MODE"
-            elif state == "BOTSELECT": title_text = "SELECT OPPONENT"
-            
-            t_surf = assets_loader.FONTS['title'].render(title_text, True, WHITE)
-            screen.blit(t_surf, (WIDTH//2 - t_surf.get_width()//2, 50))
 
-        # --- CONTENT ---
-        
-        if state == "MAIN":
-            for btn in btns_main:
-                btn.draw(screen)
-            v_surf = assets_loader.FONTS['body'].render("v2.2 Stable", True, LIGHT_GRAY)
-            screen.blit(v_surf, (WIDTH - 120, HEIGHT - 30))
-
-        elif state == "DURATION":
-            lbl = assets_loader.FONTS['ui'].render("ENTER MATCH DURATION (Seconds):", True, BLUE)
-            screen.blit(lbl, (WIDTH//2 - lbl.get_width()//2, HEIGHT//2 - 100))
-            
-            input_rect = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 - 40, 300, 80)
-            pygame.draw.rect(screen, (0,0,0,150), input_rect, border_radius=10)
-            pygame.draw.rect(screen, GREEN, input_rect, 3, border_radius=10)
-            
-            #txt_surf = assets_loader.FONTS['title'].render(duration_input_text + "_", True, WHITE)
-            txt_surf = assets_loader.FONTS['title'].render(duration_input_text, True, WHITE)
-            screen.blit(txt_surf, (input_rect.centerx - txt_surf.get_width()//2, input_rect.centery - txt_surf.get_height()//2))
-            
-            inst = assets_loader.FONTS['body'].render("Press ENTER or click PLAY to Start Match", True, ORANGE)
-            screen.blit(inst, (WIDTH//2 - inst.get_width()//2, HEIGHT//2 + 60))
-
-            btn_play.draw(screen)
-            btn_back.draw(screen)
-
-        elif state == "MODE":
-            mouse_pos = pygame.mouse.get_pos()
-            for key, base_rect in mode_rects.items():
-                mode = GAME_MODES[key]
-                is_hover = base_rect.collidepoint(mouse_pos)
-                is_selected = (selected_mode_key == key)
-                
-                target_scale = 1.05 if is_hover else 1.0
-                mode_scales[key] += (target_scale - mode_scales[key]) * 0.15
-                current_scale = mode_scales[key]
-                
-                scaled_w = int(base_rect.width * current_scale)
-                scaled_h = int(base_rect.height * current_scale)
-                draw_rect = pygame.Rect(0, 0, scaled_w, scaled_h)
-                draw_rect.center = base_rect.center
-
-                field_tex = assets_loader.GRAPHICS.get(mode['field_texture'])
-                if field_tex:
-                    thumb = pygame.transform.scale(field_tex, (draw_rect.width, draw_rect.height))
-                    screen.blit(thumb, draw_rect.topleft)
-                else:
-                    pygame.draw.rect(screen, GRAY, draw_rect)
-
-                overlay = pygame.Surface((draw_rect.width, draw_rect.height), pygame.SRCALPHA)
-                overlay.fill((0, 0, 0, 160)) 
-                screen.blit(overlay, draw_rect.topleft)
-
-                border_color = ORANGE if is_selected else (WHITE if is_hover else LIGHT_GRAY)
-                border_width = 4 if is_selected else 2
-                pygame.draw.rect(screen, border_color, draw_rect, border_width)
-                
-                ball_img = assets_loader.GRAPHICS.get(mode['ball_texture'])
-                if ball_img:
-                    ball_img = pygame.transform.scale(ball_img, (64, 64))
-                    screen.blit(ball_img, (draw_rect.centerx - 32, draw_rect.top + 40))
-                
-                name_surf = assets_loader.FONTS['ui'].render(mode['name'], True, WHITE)
-                screen.blit(name_surf, (draw_rect.centerx - name_surf.get_width()//2, draw_rect.top + 120))
-                
-                desc_words = mode['desc'].split(' ')
-                line1 = " ".join(desc_words[:len(desc_words)//2])
-                line2 = " ".join(desc_words[len(desc_words)//2:])
-                
-                d1 = assets_loader.FONTS['body'].render(line1, True, LIGHT_GRAY)
-                d2 = assets_loader.FONTS['body'].render(line2, True, LIGHT_GRAY)
-                screen.blit(d1, (draw_rect.centerx - d1.get_width()//2, draw_rect.top + 180))
-                screen.blit(d2, (draw_rect.centerx - d2.get_width()//2, draw_rect.top + 210))
-
-            #info = assets_loader.FONTS['body'].render("Click to Select", True, WHITE)
-            #screen.blit(info, (WIDTH//2 - info.get_width()//2, HEIGHT - 150))
-            
-            btn_back.draw(screen)
-
-        elif state == "CONTROLS":
-            y = 160
-            lines = [
-                "PLAYER 1 (BLUE): W,A,S,D + L-SHIFT (Boost)",
-                "PLAYER 2 (RED): ARROWS + R-SHIFT (Boost)",
-                "",
-                "P / ESC: Pause Game",
-                "R: Restart Match (Paused)",
-                "M: Main Menu (Paused)",
-                "Q: Quit Game (Paused)"
-            ]
-            for line in lines:
-                if "PLAYER 1" in line:
-                    surf = assets_loader.FONTS['ui_small'].render(line, True, BLUE)
-                elif "PLAYER 2" in line:
-                    surf = assets_loader.FONTS['ui_small'].render(line, True, RED)
-                else:
-                    surf = assets_loader.FONTS['ui_small'].render(line, True, LIGHT_GRAY)
-                screen.blit(surf, (WIDTH//2 - surf.get_width()//2, y))
-                if line == "":
-                    y += 30
-                else:
-                    y += 50
-            btn_back.draw(screen)
-
-        elif state == "HELP":
-            y = 190
-            rules = [
-                "OBJECTIVE: Score more goals than opponent!",
-                "1. Each team has 1 Player + 1 AI Goalkeeper",
-                "2. Hold SHIFT to Boost (1.5x Speed)",
-                "3. Collisions transfer momentum",
-                "4. Hockey Mode has low friction (slippery!)",
-                "",
-                "Good luck!"
-            ]
-            for line in rules:
-                surf = assets_loader.FONTS['body'].render(line, True, LIGHT_GRAY)
-                screen.blit(surf, (230, y))
-                y += 40
-            btn_back.draw(screen)
-        
-        elif state == "PLAYMODE":
-            # Draw play mode selection buttons
-            for btn in btns_playmode:
-                btn.draw(screen)
-            
-            # Draw some helpful text
-            info = assets_loader.FONTS['body'].render("Choose your play mode", True, LIGHT_GRAY)
-            screen.blit(info, (WIDTH//2 - info.get_width()//2, HEIGHT//2 - 120))
-            
-            btn_back.draw(screen)
-        
-        elif state == "BOTSELECT":
-            # Draw bot selection buttons
-            for btn in bot_buttons:
-                btn.draw(screen)
-            
-            # Draw info text
-            info = assets_loader.FONTS['body'].render("Select your AI opponent", True, LIGHT_GRAY)
-            screen.blit(info, (WIDTH//2 - info.get_width()//2, 150))
-            
-            hint = assets_loader.FONTS['body'].render(f"Selected: {opponent_type}", True, ORANGE)
-            screen.blit(hint, (WIDTH//2 - hint.get_width()//2, HEIGHT - 160))
-            
-            btn_back.draw(screen)
-
-        # --- EVENT HANDLING ---
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return None
-            
-            # 1. GLOBAL BACK BUTTON (FIXED LOGIC)
-            if state in ["MODE", "CONTROLS", "HELP", "DURATION", "PLAYMODE", "BOTSELECT"]:
-                if btn_back.check_input(event) == "BACK":
-                    # Navigate back to appropriate screen
-                    if state == "BOTSELECT":
-                        state = "PLAYMODE"
-                    elif state == "PLAYMODE":
-                        state = "MAIN"
-                    elif state == "DURATION":
-                        state = "PLAYMODE"
-                    else:
-                        state = "MAIN"
-                    if assets_loader.SOUNDS['click']: assets_loader.SOUNDS['click'].play()
-                    continue # <--- Stop processing this event immediately!
-            
-            # 2. STATE SPECIFIC INPUTS
-            if state == "MAIN":
-                for btn in btns_main:
-                    res = btn.check_input(event)
-                    if res == "PLAYMODE":
-                        state = "PLAYMODE"
-                    elif res == "MODE":
-                        state = "MODE"
-                    elif res == "CONTROLS":
-                        state = "CONTROLS"
-                    elif res == "HELP":
-                        state = "HELP"
-                    elif res == "EXIT":
-                        return None
-            
-            elif state == "PLAYMODE":
-                for btn in btns_playmode:
-                    res = btn.check_input(event)
-                    if res == "BOTSELECT":
-                        # Scan for available bots and populate buttons
-                        bot_buttons = scan_bot_models()
-                        state = "BOTSELECT"
-                    elif res == "2PLAYER":
-                        opponent_type = "HUMAN"
-                        state = "DURATION"
-                
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    state = "MAIN"
-            
-            elif state == "BOTSELECT":
-                for btn in bot_buttons:
-                    res = btn.check_input(event)
-                    if res and res.startswith("BOT:"):
-                        # Extract bot name from action
-                        opponent_type = res.split(":", 1)[1]
-                        state = "DURATION"
-                
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    state = "PLAYMODE"
-            
-            elif state == "DURATION":
-                # 1. Track if we should start the game
-                start_match = False
-
-                # Check Button Click (This handles Mouse Events internally)
-                if btn_play.check_input(event) == "PLAY":
-                    start_match = True
-
-                # Check Keyboard Inputs
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_RETURN:
-                        start_match = True
-                    
-                    elif event.key == pygame.K_BACKSPACE:
-                        duration_input_text = duration_input_text[:-1]
-                    elif event.key == pygame.K_ESCAPE:
-                        state = "MAIN"
-                    elif event.unicode.isdigit() and len(duration_input_text) < 4:
-                        duration_input_text += event.unicode
-
-                # 2. Execute Start Logic if triggered by either Enter OR Button
-                if start_match:
-                    final_config = GAME_MODES[selected_mode_key].copy()
-                    try:
-                        d = int(duration_input_text)
-                        if d < 10: d = 10 
-                        if d > 9999: d = 9999
-                        final_config['duration'] = d
-                    except ValueError:
-                        final_config['duration'] = 200
-                    
-                    # Attach opponent type to config
-                    final_config['opponent_type'] = opponent_type
-                    
-                    if assets_loader.SOUNDS['click']: assets_loader.SOUNDS['click'].play()
-                    return final_config
-
-            elif state == "MODE":
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if mode_rects['SOCCER'].collidepoint(event.pos):
-                        selected_mode_key = 'SOCCER'
-                        if assets_loader.SOUNDS['click']: assets_loader.SOUNDS['click'].play()
-                    elif mode_rects['HOCKEY'].collidepoint(event.pos):
-                        selected_mode_key = 'HOCKEY'
-                        if assets_loader.SOUNDS['click']: assets_loader.SOUNDS['click'].play()
-                
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    state = "MAIN"
-            
-            elif state in ["CONTROLS", "HELP"]:
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    state = "MAIN"
-
-        pygame.display.flip()
-        clock.tick(60)
+# Legacy function for backwards compatibility
+def main_menu_loop(screen, clock):
+    """Legacy function - use MenuManager instead."""
+    menu = MenuManager(screen, clock)
+    return menu.show()
