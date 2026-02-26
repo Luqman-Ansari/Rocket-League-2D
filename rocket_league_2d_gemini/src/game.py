@@ -97,6 +97,7 @@ class Match:
         
         # Initialize game objects
         self.rl_model = None
+        self.rl_model_p2 = None  # For AUTO mode where p2 is also a bot
         self._init_players()
         self._init_ball()
         
@@ -116,6 +117,28 @@ class Match:
                          {'up': pygame.K_UP, 'down': pygame.K_DOWN, 'left': pygame.K_LEFT,
                           'right': pygame.K_RIGHT, 'boost': pygame.K_m},
                          'car_red', self.friction_car)
+        
+        elif self.opponent_type == "AUTO":
+            # Both players are bots
+            bot1_type = self.config.get('bot1_type', 'Basic')
+            bot2_type = self.config.get('bot2_type', 'Basic')
+            
+            # Initialize p1 (Blue/Left bot)
+            if bot1_type == "Basic":
+                self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
+            else:
+                self.p1 = TrainedAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
+                self._load_ai_model(bot1_type, 'p1')
+            
+            # Initialize p2 (Red/Right bot)
+            if bot2_type == "Basic":
+                self.p2 = SimpleAICar(WIDTH-200, HEIGHT//2, RED, 'car_red', self.friction_car)
+            else:
+                self.p2 = TrainedAICar(WIDTH-200, HEIGHT//2, RED, 'car_red', self.friction_car)
+                self._load_ai_model(bot2_type, 'p2')
+            
+            print(f"AUTO Mode: {bot1_type} (Blue) vs {bot2_type} (Red)")
+        
         else:
             # p2 (Red/Right) is Human, p1 (Blue/Left) is Bot
             self.p2 = Car(WIDTH-200, HEIGHT//2, RED,
@@ -127,7 +150,7 @@ class Match:
                 self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
             else:
                 self.p1 = TrainedAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
-                self._load_ai_model()
+                self._load_ai_model(self.opponent_type, 'p1')
         
         # Initialize goalkeepers
         self.gk1 = Goalkeeper(50, HEIGHT//2, DARK_BLUE, 'left', 'gk_blue', self.friction_car)
@@ -139,24 +162,37 @@ class Match:
         """Initialize the ball."""
         self.ball = Ball(self.ball_texture, self.friction_ball)
     
-    def _load_ai_model(self):
+    def _load_ai_model(self, model_name, player='p1'):
         """Load trained AI model if available."""
         if not SB3_AVAILABLE:
-            print("stable_baselines3 not available, using Basic AI")
-            self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
+            print(f"stable_baselines3 not available for {player}, using Basic AI")
+            if player == 'p1':
+                self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
+            else:
+                self.p2 = SimpleAICar(WIDTH-200, HEIGHT//2, RED, 'car_red', self.friction_car)
             return
         
-        model_path = os.path.join("..", "rl", "versions", f"{self.opponent_type}.zip")
+        model_path = os.path.join("..", "rl", "versions", f"{model_name}.zip")
         if os.path.exists(model_path):
             try:
-                self.rl_model = PPO.load(model_path)
-                print(f"Loaded AI model: {self.opponent_type}")
+                if player == 'p1':
+                    self.rl_model = PPO.load(model_path)
+                    print(f"Loaded AI model for p1: {model_name}")
+                else:
+                    self.rl_model_p2 = PPO.load(model_path)
+                    print(f"Loaded AI model for p2: {model_name}")
             except Exception as e:
-                print(f"Error loading model {self.opponent_type}: {e}")
-                self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
+                print(f"Error loading model {model_name} for {player}: {e}")
+                if player == 'p1':
+                    self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
+                else:
+                    self.p2 = SimpleAICar(WIDTH-200, HEIGHT//2, RED, 'car_red', self.friction_car)
         else:
-            print(f"Model file not found: {model_path}")
-            self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
+            print(f"Model file not found for {player}: {model_path}")
+            if player == 'p1':
+                self.p1 = SimpleAICar(200, HEIGHT//2, BLUE, 'car_blue', self.friction_car)
+            else:
+                self.p2 = SimpleAICar(WIDTH-200, HEIGHT//2, RED, 'car_red', self.friction_car)
     
     def run(self):
         """Main match loop. Returns action string: 'MENU', 'RESTART', or 'QUIT'."""
@@ -246,18 +282,30 @@ class Match:
         """Update game entities and physics."""
         keys = pygame.key.get_pressed()
         
-        # Handle player controls
+        # Handle player controls based on mode
         if self.opponent_type == "HUMAN":
+            # Both players are human
             self.p1.handle(keys)
             self.p2.handle(keys)
+        elif self.opponent_type == "AUTO":
+            # Both players are bots - no keyboard input
+            self._update_bot('p1')
+            self._update_bot('p2')
         else:
+            # p2 is human, p1 is bot
             self.p2.handle(keys)
-            self._update_bot()
+            self._update_bot('p1')
         
-        # Update entities
+        # Update entities based on mode
         if self.opponent_type == "HUMAN":
             self.p1.update()
-        self.p2.update()
+            self.p2.update()
+        elif self.opponent_type == "AUTO":
+            # Bots already updated in _update_bot
+            pass
+        else:
+            # p1 is bot (already updated), update p2
+            self.p2.update()
         
         self.gk1.update_ai(self.ball)
         self.gk2.update_ai(self.ball)
@@ -274,36 +322,64 @@ class Match:
         # Goal detection
         self._check_goals()
     
-    def _update_bot(self):
-        """Update bot AI behavior."""
-        if isinstance(self.p1, SimpleAICar):
-            self.p1.chase_ball(self.ball)
-        elif isinstance(self.p1, TrainedAICar) and self.rl_model is not None:
-            obs = self._create_observation()
-            action, _ = self.rl_model.predict(obs, deterministic=True)
-            self.p1.apply_ai_action(action)
+    def _update_bot(self, player='p1'):
+        """Update bot AI behavior for specified player."""
+        if player == 'p1':
+            bot = self.p1
+            model = self.rl_model
         else:
-            self.p1.update()
+            bot = self.p2
+            model = self.rl_model_p2
+        
+        if isinstance(bot, SimpleAICar):
+            bot.chase_ball(self.ball)
+        elif isinstance(bot, TrainedAICar) and model is not None:
+            obs = self._create_observation(player)
+            action, _ = model.predict(obs, deterministic=True)
+            bot.apply_ai_action(action)
+        else:
+            bot.update()
     
-    def _create_observation(self):
-        """Create observation array for trained AI."""
+    def _create_observation(self, player='p1'):
+        """Create observation array for trained AI from the player's perspective."""
         max_speed = 7.0
-        return np.array([
-            self.p1.x / WIDTH,
-            self.p1.y / HEIGHT,
-            self.p1.vx / max_speed,
-            self.p1.vy / max_speed,
-            self.p2.x / WIDTH,
-            self.p2.y / HEIGHT,
-            self.p2.vx / max_speed,
-            self.p2.vy / max_speed,
-            self.ball.x / WIDTH,
-            self.ball.y / HEIGHT,
-            self.ball.vx / 15.0,
-            self.ball.vy / 15.0,
-            self.gk1.y / HEIGHT,
-            self.gk2.y / HEIGHT
-        ], dtype=np.float32)
+        
+        if player == 'p1':
+            # p1's perspective (Blue/Left)
+            return np.array([
+                self.p1.x / WIDTH,
+                self.p1.y / HEIGHT,
+                self.p1.vx / max_speed,
+                self.p1.vy / max_speed,
+                self.p2.x / WIDTH,
+                self.p2.y / HEIGHT,
+                self.p2.vx / max_speed,
+                self.p2.vy / max_speed,
+                self.ball.x / WIDTH,
+                self.ball.y / HEIGHT,
+                self.ball.vx / 15.0,
+                self.ball.vy / 15.0,
+                self.gk1.y / HEIGHT,
+                self.gk2.y / HEIGHT
+            ], dtype=np.float32)
+        else:
+            # p2's perspective (Red/Right) - swap p1 and p2 positions
+            return np.array([
+                self.p2.x / WIDTH,
+                self.p2.y / HEIGHT,
+                self.p2.vx / max_speed,
+                self.p2.vy / max_speed,
+                self.p1.x / WIDTH,
+                self.p1.y / HEIGHT,
+                self.p1.vx / max_speed,
+                self.p1.vy / max_speed,
+                self.ball.x / WIDTH,
+                self.ball.y / HEIGHT,
+                self.ball.vx / 15.0,
+                self.ball.vy / 15.0,
+                self.gk2.y / HEIGHT,
+                self.gk1.y / HEIGHT
+            ], dtype=np.float32)
     
     def _check_goals(self):
         """Check if a goal was scored."""

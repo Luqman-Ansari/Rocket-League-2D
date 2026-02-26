@@ -75,6 +75,9 @@ class MenuManager:
         self.selected_mode_key = "HOCKEY"
         self.duration_input_text = "200"
         self.opponent_type = "HUMAN"
+        self.bot1_type = None  # For AUTO mode
+        self.bot2_type = None  # For AUTO mode
+        self.auto_selection_stage = 1  # 1=bot1, 2=bot2
         
         # Setup UI elements
         center_x = WIDTH // 2
@@ -96,8 +99,9 @@ class MenuManager:
         
         # Play Mode Buttons
         self.btns_playmode = [
-            Button("1 PLAYER (VS BOT)", center_x - 200, HEIGHT//2 - 60, 400, 60, action="BOTSELECT"),
-            Button("2 PLAYER (LOCAL)", center_x - 200, HEIGHT//2 + 20, 400, 60, action="2PLAYER")
+            Button("1 PLAYER (VS BOT)", center_x - 200, HEIGHT//2 - 80, 400, 60, action="BOTSELECT"),
+            Button("2 PLAYER (LOCAL)", center_x - 200, HEIGHT//2, 400, 60, action="2PLAYER"),
+            Button("AUTO (BOT VS BOT)", center_x - 200, HEIGHT//2 + 80, 400, 60, action="AUTOCHECK")
         ]
         
         # Bot Selection Buttons (dynamically generated)
@@ -154,15 +158,21 @@ class MenuManager:
             logo_scaled = pygame.transform.scale(logo, (w, h))
             self.screen.blit(logo_scaled, (WIDTH//2 - w//2, 50))
         else:
-            title_text = {
+            title_map = {
                 "MAIN": "ROCKET SOCCER",
                 "MODE": "SELECT GAME MODE",
                 "CONTROLS": "CONTROLS",
                 "HELP": "HOW TO PLAY",
                 "DURATION": "MATCH SETUP",
                 "PLAYMODE": "SELECT PLAY MODE",
-                "BOTSELECT": "SELECT OPPONENT"
-            }.get(self.state, "ROCKET SOCCER")
+                "BOTSELECT": "SELECT OPPONENT",
+                "AUTONEED": "AUTO MODE UNAVAILABLE"
+            }
+            
+            if self.state == "AUTOSELECT":
+                title_text = "SELECT BOT 1 (LEFT/BLUE)" if self.auto_selection_stage == 1 else "SELECT BOT 2 (RIGHT/RED)"
+            else:
+                title_text = title_map.get(self.state, "ROCKET SOCCER")
             
             t_surf = assets_loader.FONTS['title'].render(title_text, True, WHITE)
             self.screen.blit(t_surf, (WIDTH//2 - t_surf.get_width()//2, 50))
@@ -183,6 +193,10 @@ class MenuManager:
             self._draw_playmode_selection()
         elif self.state == "BOTSELECT":
             self._draw_bot_selection()
+        elif self.state == "AUTOSELECT":
+            self._draw_auto_bot_selection()
+        elif self.state == "AUTONEED":
+            self._draw_auto_need_message()
     
     def _draw_main_menu(self):
         """Draw main menu buttons."""
@@ -334,6 +348,43 @@ class MenuManager:
         
         self.btn_back.draw(self.screen)
     
+    def _draw_auto_bot_selection(self):
+        """Draw AUTO mode bot selection screen."""
+        for btn in self.bot_buttons:
+            btn.draw(self.screen)
+        
+        # Info text based on selection stage
+        if self.auto_selection_stage == 1:
+            info = assets_loader.FONTS['body'].render("Select the LEFT (BLUE) bot", True, LIGHT_GRAY)
+            if self.bot1_type:
+                selected = assets_loader.FONTS['body'].render(f"Bot 1: {self.bot1_type}", True, BLUE)
+                self.screen.blit(selected, (WIDTH//2 - selected.get_width()//2, HEIGHT - 160))
+        else:
+            info = assets_loader.FONTS['body'].render("Select the RIGHT (RED) bot", True, LIGHT_GRAY)
+            bot1_txt = assets_loader.FONTS['body'].render(f"Bot 1 (Blue): {self.bot1_type}", True, BLUE)
+            self.screen.blit(bot1_txt, (WIDTH//2 - bot1_txt.get_width()//2, HEIGHT - 180))
+            if self.bot2_type:
+                bot2_txt = assets_loader.FONTS['body'].render(f"Bot 2 (Red): {self.bot2_type}", True, RED)
+                self.screen.blit(bot2_txt, (WIDTH//2 - bot2_txt.get_width()//2, HEIGHT - 140))
+        
+        self.screen.blit(info, (WIDTH//2 - info.get_width()//2, 150))
+        self.btn_back.draw(self.screen)
+    
+    def _draw_auto_need_message(self):
+        """Draw message about needing more bots for AUTO mode."""
+        y = 200
+        msg1 = assets_loader.FONTS['ui'].render("AUTO mode requires at least 2 AI bots", True, ORANGE)
+        msg2 = assets_loader.FONTS['body'].render("Currently available: 1 bot (Basic)", True, LIGHT_GRAY)
+        msg3 = assets_loader.FONTS['body'].render("Train more models and save them to rl/versions/", True, LIGHT_GRAY)
+        msg4 = assets_loader.FONTS['body'].render("to unlock AUTO mode", True, LIGHT_GRAY)
+        
+        self.screen.blit(msg1, (WIDTH//2 - msg1.get_width()//2, y))
+        self.screen.blit(msg2, (WIDTH//2 - msg2.get_width()//2, y + 80))
+        self.screen.blit(msg3, (WIDTH//2 - msg3.get_width()//2, y + 140))
+        self.screen.blit(msg4, (WIDTH//2 - msg4.get_width()//2, y + 180))
+        
+        self.btn_back.draw(self.screen)
+    
     def _handle_events(self):
         """Handle all menu events. Returns config dict when starting game, None to quit, False to continue."""
         for event in pygame.event.get():
@@ -341,7 +392,7 @@ class MenuManager:
                 return None
             
             # Global back button handler
-            if self.state in ["MODE", "CONTROLS", "HELP", "DURATION", "PLAYMODE", "BOTSELECT"]:
+            if self.state in ["MODE", "CONTROLS", "HELP", "DURATION", "PLAYMODE", "BOTSELECT", "AUTOSELECT", "AUTONEED"]:
                 if self.btn_back.check_input(event) == "BACK":
                     self._navigate_back()
                     continue
@@ -356,6 +407,17 @@ class MenuManager:
     def _navigate_back(self):
         """Handle back navigation based on current state."""
         if self.state == "BOTSELECT":
+            self.state = "PLAYMODE"
+        elif self.state == "AUTOSELECT":
+            if self.auto_selection_stage == 2:
+                self.auto_selection_stage = 1
+                self.bot2_type = None
+            else:
+                self.state = "PLAYMODE"
+                self.auto_selection_stage = 1
+                self.bot1_type = None
+                self.bot2_type = None
+        elif self.state == "AUTONEED":
             self.state = "PLAYMODE"
         elif self.state == "PLAYMODE":
             self.state = "MAIN"
@@ -378,6 +440,10 @@ class MenuManager:
             return self._handle_mode_events(event)
         elif self.state in ["CONTROLS", "HELP"]:
             return self._handle_info_screen_events(event)
+        elif self.state == "AUTOSELECT":
+            return self._handle_autoselect_events(event)
+        elif self.state == "AUTONEED":
+            return self._handle_autoneed_events(event)
         
         return False
     
@@ -407,6 +473,17 @@ class MenuManager:
             elif res == "2PLAYER":
                 self.opponent_type = "HUMAN"
                 self.state = "DURATION"
+            elif res == "AUTOCHECK":
+                # Check if we have at least 2 bots
+                bot_count = self._count_available_bots()
+                if bot_count >= 2:
+                    self.bot_buttons = self._scan_bot_models()
+                    self.auto_selection_stage = 1
+                    self.bot1_type = None
+                    self.bot2_type = None
+                    self.state = "AUTOSELECT"
+                else:
+                    self.state = "AUTONEED"
         
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.state = "MAIN"
@@ -474,6 +551,35 @@ class MenuManager:
             self.state = "MAIN"
         return False
     
+    def _handle_autoselect_events(self, event):
+        """Handle AUTO mode bot selection events."""
+        for btn in self.bot_buttons:
+            res = btn.check_input(event)
+            if res and res.startswith("BOT:"):
+                bot_name = res.split(":", 1)[1]
+                if self.auto_selection_stage == 1:
+                    self.bot1_type = bot_name
+                    self.auto_selection_stage = 2
+                else:
+                    self.bot2_type = bot_name
+                    self.opponent_type = "AUTO"
+                    self.state = "DURATION"
+        
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            if self.auto_selection_stage == 2:
+                self.auto_selection_stage = 1
+                self.bot2_type = None
+            else:
+                self.state = "PLAYMODE"
+        
+        return False
+    
+    def _handle_autoneed_events(self, event):
+        """Handle AUTO mode unavailable screen events."""
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.state = "PLAYMODE"
+        return False
+    
     def _create_game_config(self):
         """Create game configuration dictionary."""
         final_config = GAME_MODES[self.selected_mode_key].copy()
@@ -486,6 +592,11 @@ class MenuManager:
             final_config['duration'] = 200
         
         final_config['opponent_type'] = self.opponent_type
+        
+        # Add bot types for AUTO mode
+        if self.opponent_type == "AUTO":
+            final_config['bot1_type'] = self.bot1_type
+            final_config['bot2_type'] = self.bot2_type
         
         if assets_loader.SOUNDS['click']:
             assets_loader.SOUNDS['click'].play()
@@ -515,6 +626,15 @@ class MenuManager:
                 y_offset += 60
         
         return buttons
+    
+    def _count_available_bots(self):
+        """Count the number of available bot types."""
+        count = 1  # Basic bot
+        versions_path = os.path.join("..", "rl", "versions")
+        if os.path.exists(versions_path) and os.path.isdir(versions_path):
+            zip_files = [f for f in os.listdir(versions_path) if f.endswith('.zip')]
+            count += len(zip_files)
+        return count
 
 
 # Legacy function for backwards compatibility
