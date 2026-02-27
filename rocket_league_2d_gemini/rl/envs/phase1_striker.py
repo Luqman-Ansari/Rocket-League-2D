@@ -115,35 +115,32 @@ class Phase1StrikerEnv(gym.Env):
         dist_to_ball = math.hypot(dx, dy)
         
         # A. VELOCITY TOWARD BALL REWARD
-        # +0.05 for moving toward the ball
         if dist_to_ball > 0:
             velocity_towards_ball = (self.agent.vx * dx + self.agent.vy * dy) / dist_to_ball
             reward += velocity_towards_ball * 0.05
         
         # B. TOUCH REWARD
-        # +2.0 base reward for touching the ball
-        # Additional +0.5 * ball.vx if hit toward the right (opponent's net)
         if dist_to_ball <= (self.agent.radius + self.ball.radius + 2):
-            reward += 2.0
+            reward += 0.1  # Dropped from 2.0 to 0.1!
             
             # Bonus for hitting ball toward opponent's goal
             if self.ball.vx > 0:
-                reward += self.ball.vx * 0.5
+                reward += self.ball.vx * 0.1 # Dropped from 0.5 to 0.1!
         
-        # C. GOAL SCORED (Right Net)
+        # C. GOAL SCORED (MASSIVELY BUFFED)
         if self.ball.x + self.ball.radius > WIDTH and GOAL_TOP_Y < self.ball.y < GOAL_BOTTOM_Y:
             self.score_agent += 1
-            reward += 50.0
+            reward += 1000.0  
             done = True
         
-        # D. OWN GOAL (Left Net)
+        # D. OWN GOAL
         elif self.ball.x - self.ball.radius < 0 and GOAL_TOP_Y < self.ball.y < GOAL_BOTTOM_Y:
             self.score_opponent += 1
-            reward -= 2.0  # Small penalty to avoid fear of moving
+            reward -= 10.0  # Increased penalty slightly
             done = True
         
         # E. TIME PENALTY
-        reward -= 0.01
+        reward -= 0.05 
         
         # F. TIME LIMIT
         if self.frames_passed >= self.max_frames:
