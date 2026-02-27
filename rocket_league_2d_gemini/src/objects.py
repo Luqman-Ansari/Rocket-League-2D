@@ -146,7 +146,7 @@ class Ball:
         self.reset()
         
     def reset(self):
-        self.x = WIDTH//2; self.y = HEIGHT//2
+        self.x = WIDTH//2; self.y = HEIGHT//2 + 2
         ang = random.uniform(0, 2*math.pi)
         self.vx = 0; self.vy = 0
         self.radius = 16
