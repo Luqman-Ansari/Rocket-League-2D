@@ -13,7 +13,13 @@ class Game:
     def __init__(self):
         """Initialize pygame and game components."""
         pygame.init()
-        pygame.mixer.init()
+        
+        try:
+            pygame.mixer.init()
+            self.audio_enabled = True
+        except pygame.error as e:
+            print(f"Warning: Audio device failed to load, playing without sound. ({e})")
+            self.audio_enabled = False
         
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Rocket Soccer: Ultimate Edition")
