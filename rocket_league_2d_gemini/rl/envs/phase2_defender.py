@@ -120,39 +120,51 @@ class Phase2DefenderEnv(gym.Env):
                 resolve_car_car(cars[i], cars[j])
         
         # ==========================================
-        # PHASE 2 REWARDS: Defense and positioning
+        # FIXED PHASE 2 REWARDS: Anti-Sandwich & Defense
         # ==========================================
         
+        # Calculate opponent touch for sandwich detection
+        dist_opp_to_ball = math.hypot(self.ball.x - self.opponent.x, self.ball.y - self.opponent.y)
+        opp_touched_ball = dist_opp_to_ball <= (self.opponent.radius + self.ball.radius + 2)
+
         # A. TOUCH REWARD
-        # Reduced from Phase 1 so it doesn't just farm touches
         if touched_by_agent:
-            reward += 1.0
-        
-        # B. SAVE/CLEAR REWARD
-        # If ball is in the left defensive zone (left third of field)
-        # and agent hits it towards the right, reward it
+            reward += 0.1 
+            
+        # B. THE ANTI-SANDWICH (DEADLOCK) PENALTY
+        # If both cars are touching the ball, but the ball isn't moving forward, punish the agent!
+        # This teaches it: "If you are stuck against the opponent, back up and go around!"
+        if touched_by_agent and opp_touched_ball:
+            if self.ball.vx <= 1.0: 
+                reward -= 0.5 
+                
+        # C. BALL ADVANCE REWARD (Encourages pushing past the opponent)
+        # We give a tiny drip of points if the ball is actively rolling right
+        if self.ball.vx > 0:
+            reward += (self.ball.vx * 0.01)
+            
+        # D. SAVE/CLEAR REWARD
         defensive_zone_x = WIDTH / 3
         if self.prev_ball_x < defensive_zone_x and touched_by_agent:
-            # Check if ball is now moving toward the right
             if self.ball.vx > self.prev_ball_vx:
-                reward += 5.0
+                reward += 2.0  
         
-        # C. GOAL SCORED (Right Net)
+        # E. GOAL SCORED (Right Net)
         if self.ball.x + self.ball.radius > WIDTH and GOAL_TOP_Y < self.ball.y < GOAL_BOTTOM_Y:
             self.score_agent += 1
-            reward += 50.0
+            reward += 1000.0 
             done = True
         
-        # D. OWN GOAL (Left Net) - Now it must fear getting scored on
+        # F. OWN GOAL (Left Net)
         elif self.ball.x - self.ball.radius < 0 and GOAL_TOP_Y < self.ball.y < GOAL_BOTTOM_Y:
             self.score_opponent += 1
-            reward -= 20.0  # Significant penalty
+            reward -= 50.0  
             done = True
         
-        # E. TIME PENALTY
-        reward -= 0.01
+        # G. TIME PENALTY
+        reward -= 0.05 
         
-        # F. TIME LIMIT
+        # H. TIME LIMIT
         if self.frames_passed >= self.max_frames:
             done = True
         
