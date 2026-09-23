@@ -4,6 +4,7 @@ import math
 import os
 from src.settings import *
 from src.assets_loader import assets_loader
+from laya_controller.versions import DEFAULT_VERSION, VERSIONS as LAYA_VERSIONS
 
 
 class Button:
@@ -63,6 +64,63 @@ class Button:
                     assets_loader.SOUNDS["click"].play()
                 return self.action
         return None
+
+
+class Dropdown:
+    """A box showing the chosen option: click it to open the list, click an option to pick it."""
+
+    ROW_H = 34
+
+    def __init__(self, x, y, w, h, options, selected):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.options = list(options)
+        self.selected = selected
+        self.open = False
+        self.hover = None  # the option under the mouse while open
+
+    def _row(self, i):
+        return pygame.Rect(self.rect.x, self.rect.bottom + i * self.ROW_H, self.rect.w, self.ROW_H)
+
+    def handle(self, event):
+        """Handle mouse events. Returns True if the event was this list's, so nothing behind it gets it."""
+        if event.type == pygame.MOUSEMOTION and self.open:
+            self.hover = next((i for i in range(len(self.options)) if self._row(i).collidepoint(event.pos)), None)
+            return True
+        if event.type != pygame.MOUSEBUTTONDOWN:
+            return False
+        if self.open:  # any click closes an open list; one on an option picks it
+            for i, option in enumerate(self.options):
+                if self._row(i).collidepoint(event.pos):
+                    self.selected = option
+            self.open = False
+            return True
+        if self.rect.collidepoint(event.pos):
+            self.open, self.hover = True, None
+            if assets_loader.SOUNDS["click"]:
+                assets_loader.SOUNDS["click"].play()
+            return True
+        return False
+
+    def draw(self, screen):
+        """The closed box with the chosen option and an arrow."""
+        pygame.draw.rect(screen, GRAY, self.rect, border_radius=6)
+        pygame.draw.rect(screen, HOVER_COLOR if self.open else LIGHT_GRAY, self.rect, 2, border_radius=6)
+        text = assets_loader.FONTS["body"].render(self.selected, True, WHITE)
+        screen.blit(text, (self.rect.x + 10, self.rect.centery - text.get_height() // 2))
+        ax, ay = self.rect.right - 18, self.rect.centery
+        pygame.draw.polygon(screen, WHITE, [(ax - 7, ay - 4), (ax + 7, ay - 4), (ax, ay + 5)])
+
+    def draw_list(self, screen):
+        """The open list; drawn last so it sits on top of everything."""
+        if not self.open:
+            return
+        for i, option in enumerate(self.options):
+            row = self._row(i)
+            pygame.draw.rect(screen, (70, 70, 95) if i == self.hover else (35, 35, 45), row)
+            pygame.draw.rect(screen, LIGHT_GRAY, row, 1)
+            color = HOVER_COLOR if option == self.selected else WHITE
+            text = assets_loader.FONTS["body"].render(option, True, color)
+            screen.blit(text, (row.x + 10, row.centery - text.get_height() // 2))
 
 
 class MenuManager:
@@ -133,6 +191,12 @@ class MenuManager:
 
         # Bot Selection Buttons (dynamically generated)
         self.bot_buttons = []
+
+        # Laya: pick the version with two lists - generation (v1, v2, ...) and option
+        # (e.g. challenge-focused); LEFT/RIGHT also steps through every version
+        self.laya_names = list(LAYA_VERSIONS)
+        self.laya_index = self.laya_names.index(DEFAULT_VERSION)
+        self.laya_button = self.gen_list = self.option_list = None
 
         # Mode selection rects and animations
         self.mode_rects = {
@@ -398,7 +462,7 @@ class MenuManager:
             btn.draw(self.screen)
 
         info = assets_loader.FONTS["body"].render(
-            "Select your AI opponent", True, LIGHT_GRAY
+            "Select your AI opponent (Laya: use the lists or LEFT/RIGHT)", True, LIGHT_GRAY
         )
         self.screen.blit(info, (WIDTH // 2 - info.get_width() // 2, 150))
 
@@ -408,6 +472,7 @@ class MenuManager:
         self.screen.blit(hint, (WIDTH // 2 - hint.get_width() // 2, HEIGHT - 160))
 
         self.btn_back.draw(self.screen)
+        self._draw_laya_row()
 
     def _draw_auto_bot_selection(self):
         """Draw AUTO mode bot selection screen."""
@@ -417,7 +482,7 @@ class MenuManager:
         # Info text based on selection stage
         if self.auto_selection_stage == 1:
             info = assets_loader.FONTS["body"].render(
-                "Select the LEFT (BLUE) bot", True, LIGHT_GRAY
+                "Select the LEFT (BLUE) bot (Laya: use the lists or arrow keys)", True, LIGHT_GRAY
             )
             if self.bot1_type:
                 selected = assets_loader.FONTS["body"].render(
@@ -428,7 +493,7 @@ class MenuManager:
                 )
         else:
             info = assets_loader.FONTS["body"].render(
-                "Select the RIGHT (RED) bot", True, LIGHT_GRAY
+                "Select the RIGHT (RED) bot (Laya: use the lists or arrow keys)", True, LIGHT_GRAY
             )
             bot1_txt = assets_loader.FONTS["body"].render(
                 f"Bot 1 (Blue): {self.bot1_type}", True, BLUE
@@ -446,6 +511,28 @@ class MenuManager:
 
         self.screen.blit(info, (WIDTH // 2 - info.get_width() // 2, 150))
         self.btn_back.draw(self.screen)
+        self._draw_laya_row()
+
+    def _draw_laya_row(self):
+        """The two Laya lists and the chosen version's note; an open list goes on top of everything."""
+        self.gen_list.draw(self.screen)
+        self.option_list.draw(self.screen)
+
+        # The note (what the version tries and its recorded results), wrapped to the screen
+        font = assets_loader.FONTS["body"]
+        lines, line = [], ""
+        for word in LAYA_VERSIONS[self.laya_names[self.laya_index]].note.split():
+            if line and font.size(f"{line} {word}")[0] > WIDTH - 120:
+                lines.append(line)
+                line = word
+            else:
+                line = f"{line} {word}".strip()
+        for i, text in enumerate((lines + [line])[:2]):
+            surf = font.render(text, True, LIGHT_GRAY)
+            self.screen.blit(surf, (WIDTH // 2 - surf.get_width() // 2, self.gen_list.rect.bottom + 10 + i * 26))
+
+        self.gen_list.draw_list(self.screen)
+        self.option_list.draw_list(self.screen)
 
     def _draw_auto_need_message(self):
         """Draw message about needing more bots for AUTO mode."""
@@ -476,7 +563,7 @@ class MenuManager:
             if event.type == pygame.QUIT:
                 return None
 
-            # Global back button handler
+            # Global back button handler (not while a Laya list is open over it)
             if self.state in [
                 "MODE",
                 "CONTROLS",
@@ -486,7 +573,7 @@ class MenuManager:
                 "BOTSELECT",
                 "AUTOSELECT",
                 "AUTONEED",
-            ]:
+            ] and not self._laya_list_open():
                 if self.btn_back.check_input(event) == "BACK":
                     self._navigate_back()
                     continue
@@ -588,12 +675,15 @@ class MenuManager:
 
     def _handle_botselect_events(self, event):
         """Handle bot selection events."""
+        if self._handle_laya_lists(event):
+            return False
         for btn in self.bot_buttons:
             res = btn.check_input(event)
             if res and res.startswith("BOT:"):
                 self.opponent_type = res.split(":", 1)[1]
                 self.state = "DURATION"
 
+        self._cycle_laya_version(event)
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.state = "PLAYMODE"
 
@@ -649,6 +739,8 @@ class MenuManager:
 
     def _handle_autoselect_events(self, event):
         """Handle AUTO mode bot selection events."""
+        if self._handle_laya_lists(event):
+            return False
         for btn in self.bot_buttons:
             res = btn.check_input(event)
             if res and res.startswith("BOT:"):
@@ -661,6 +753,7 @@ class MenuManager:
                     self.opponent_type = "AUTO"
                     self.state = "DURATION"
 
+        self._cycle_laya_version(event)
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.auto_selection_stage == 2:
                 self.auto_selection_stage = 1
@@ -711,6 +804,19 @@ class MenuManager:
         )
         y_offset += 60
 
+        # Laya (laya_controller/) needs no model file: the button plays the version the two lists show
+        gen, option = self.laya_names[self.laya_index].split("-", 1)
+        self.laya_button = Button("Laya", center_x - 330, y_offset, 160, 50)
+        self.gen_list = Dropdown(
+            center_x - 150, y_offset + 5, 110, 40, self._laya_generations(), gen
+        )
+        self.option_list = Dropdown(
+            center_x - 20, y_offset + 5, 310, 40, self._laya_options(gen), option
+        )
+        self._show_laya_version()
+        buttons.append(self.laya_button)
+        y_offset += 120  # the row, and the version's note under it
+
         # Scan for trained models (use absolute path from this file's location)
         script_dir = os.path.dirname(os.path.abspath(__file__))
         versions_path = os.path.join(script_dir, "..", "rl", "versions")
@@ -743,9 +849,50 @@ class MenuManager:
 
         return buttons
 
+    def _laya_generations(self):
+        return list(dict.fromkeys(name.split("-", 1)[0] for name in self.laya_names))
+
+    def _laya_options(self, gen):
+        return [name.split("-", 1)[1] for name in self.laya_names if name.startswith(gen + "-")]
+
+    def _laya_list_open(self):
+        return any(dropdown is not None and dropdown.open for dropdown in (self.gen_list, self.option_list))
+
+    def _show_laya_version(self):
+        """Point the Laya button at the version the two lists show."""
+        name = f"{self.gen_list.selected}-{self.option_list.selected}"
+        self.laya_index = self.laya_names.index(name)
+        self.laya_button.action = f"BOT:Laya-{name}"
+
+    def _handle_laya_lists(self, event):
+        """The two Laya lists get mouse events first. Returns True if the event was theirs."""
+        for dropdown, other in ((self.gen_list, self.option_list), (self.option_list, self.gen_list)):
+            if dropdown.handle(event):
+                if dropdown.open:
+                    other.open = False  # one list open at a time
+                # A new generation keeps the option if it has it, else takes its first one
+                options = self._laya_options(self.gen_list.selected)
+                if self.option_list.selected not in options:
+                    self.option_list.selected = options[0]
+                self.option_list.options = options
+                self._show_laya_version()
+                return True
+        return False
+
+    def _cycle_laya_version(self, event):
+        """LEFT/RIGHT on the bot lists step through every Laya version (both lists follow)."""
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+            step = 1 if event.key == pygame.K_RIGHT else -1
+            self.laya_index = (self.laya_index + step) % len(self.laya_names)
+            gen, option = self.laya_names[self.laya_index].split("-", 1)
+            self.gen_list.selected = gen
+            self.option_list.options = self._laya_options(gen)
+            self.option_list.selected = option
+            self._show_laya_version()
+
     def _count_available_bots(self):
         """Count the number of available bot types."""
-        count = 1  # Basic bot
+        count = 1 + len(LAYA_VERSIONS)  # Basic bot + Laya versions
         script_dir = os.path.dirname(os.path.abspath(__file__))
         versions_path = os.path.join(script_dir, "..", "rl", "versions")
         versions_path = os.path.normpath(versions_path)

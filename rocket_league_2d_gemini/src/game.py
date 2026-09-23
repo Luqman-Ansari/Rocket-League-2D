@@ -6,6 +6,7 @@ from src.settings import *
 from src.assets_loader import assets_loader
 from src.objects import Car, Goalkeeper, Ball, SimpleAICar, TrainedAICar
 from src.physics import Physics
+from laya_controller.controller import LayaController
 
 try:
     from stable_baselines3 import PPO
@@ -215,6 +216,17 @@ class Match:
 
     def _load_ai_model(self, model_name, player="p1"):
         """Load trained AI model using absolute pathing."""
+        if model_name.startswith("Laya-"):
+            # Laya bots answer the same predict() call as SB3 models; no model file to load
+            model = LayaController(
+                model_name[len("Laya-") :], side="left" if player == "p1" else "right"
+            )
+            if player == "p1":
+                self.rl_model = model
+            else:
+                self.rl_model_p2 = model
+            return
+
         if not SB3_AVAILABLE:
             print(f"stable_baselines3 not available for {player}, using Basic AI")
             if player == "p1":
@@ -542,6 +554,13 @@ class Match:
         self.ball.draw(self.screen)
         for car in self.all_cars:
             car.draw(self.screen)
+
+        # Laya bots show their current decision above the car
+        for car, model in ((self.p1, self.rl_model), (self.p2, self.rl_model_p2)):
+            label = getattr(model, "label", None)
+            if label:
+                txt = assets_loader.FONTS["body"].render(label, True, WHITE)
+                self.screen.blit(txt, (int(car.x) - txt.get_width() // 2, int(car.y) - 55))
 
     def _draw_hud(self):
         """Draw HUD elements."""
