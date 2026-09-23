@@ -270,7 +270,13 @@ class MenuManager:
                 title_text = title_map.get(self.state, "ROCKET SOCCER")
 
             t_surf = assets_loader.FONTS["title"].render(title_text, True, WHITE)
-            self.screen.blit(t_surf, (WIDTH // 2 - t_surf.get_width() // 2, 50))
+            y = 50
+            if t_surf.get_width() > WIDTH - 40:
+                # Too wide for the screen: same typeface one size down, on the same line
+                big_h = t_surf.get_height()
+                t_surf = assets_loader.FONTS["header"].render(title_text, True, WHITE)
+                y += (big_h - t_surf.get_height()) // 2
+            self.screen.blit(t_surf, (WIDTH // 2 - t_surf.get_width() // 2, y))
 
     def _draw_content(self):
         """Draw content based on current state."""
