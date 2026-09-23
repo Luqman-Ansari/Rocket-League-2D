@@ -3,6 +3,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from src.settings import BALL_FRICTION, CAR_FRICTION
 from laya_controller.features import canonical, facts, world_action
 from laya_controller.versions import DEFAULT_VERSION, VERSIONS
 
@@ -26,15 +27,18 @@ def ask(questions, text):
 
 
 class LayaController:
-    def __init__(self, version=DEFAULT_VERSION, side="left", every=6, sync=False):
+    def __init__(self, version=DEFAULT_VERSION, side="left", every=6, sync=False,
+                 ball_friction=BALL_FRICTION, car_friction=CAR_FRICTION):
         """
         version: a key of versions.VERSIONS.  side: the half the car starts on ("left" is Blue, "right" is Red).
         every: frames between decisions (6 = 10 a second at 60 FPS).
         sync: wait for each answer instead of driving on while Laya thinks (deterministic headless runs).
+        ball_friction, car_friction: the game mode's, for predicting where the ball goes (v5+).
         """
         self.version = version
         self.v = VERSIONS[version]
         self.side, self.every, self.sync = side, every, sync
+        self.frictions = {"ball_friction": ball_friction, "car_friction": car_friction}
         self.choice = None  # Laya's latest action; None until it has answered once
         self.prob = 0.0
         self.label = "Laya loading..."  # shown above the car in-game
@@ -46,6 +50,7 @@ class LayaController:
     def predict(self, obs, deterministic=True):
         """Same shape as an SB3 model's predict(): returns (action, None)."""
         f = facts(canonical(obs, self.side))
+        f.update(self.frictions)
         self._collect()
         if self._frame % self.every == 0:
             self._decide(self.v.describe(f))

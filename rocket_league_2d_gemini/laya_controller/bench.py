@@ -104,15 +104,16 @@ def play(contender, episodes, seconds, mode="SOCCER", seed=0):
     """
     engine = RocketSoccerLogic()
     engine.max_frames = seconds * 60
+    frictions = {"ball_friction": GAME_MODES[mode]["friction_ball"], "car_friction": GAME_MODES[mode]["friction_car"]}
     for car in (engine.agent, engine.opponent, engine.gk1, engine.gk2):
-        car.friction = GAME_MODES[mode]["friction_car"]
-    engine.ball.friction = GAME_MODES[mode]["friction_ball"]
+        car.friction = frictions["car_friction"]
+    engine.ball.friction = frictions["ball_friction"]
     results, asks, cache_hits, ms = collections.Counter(), 0, 0, []
     hit_speeds, slowed = [], []
     for episode in range(episodes):
         engine.reset()
         scatter(engine, random.Random(seed + episode))
-        ctrl = LayaController(contender, sync=True) if contender in VERSIONS else None
+        ctrl = LayaController(contender, sync=True, **frictions) if contender in VERSIONS else None
         scores = engine.score_agent, engine.score_opponent
         obs, done, touching = engine.get_state(), False, False
         car, ball = engine.agent, engine.ball
@@ -120,7 +121,7 @@ def play(contender, episodes, seconds, mode="SOCCER", seed=0):
         while not done:
             speed = math.hypot(car.vx, car.vy)
             recent.append(speed)
-            action = ctrl.predict(obs)[0] if ctrl else drive(contender, facts(obs))
+            action = ctrl.predict(obs)[0] if ctrl else drive(contender, {**facts(obs), **frictions})
             obs, _, done = engine.step(action)
             was_touching, touching = touching, math.hypot(ball.x - car.x, ball.y - car.y) <= CAR_R + BALL_R + 0.5
             if touching and not was_touching:

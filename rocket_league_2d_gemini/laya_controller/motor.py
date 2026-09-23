@@ -5,8 +5,9 @@ Works in the canonical view from features.py: your goal on the left, move 4 head
 """
 import math
 
-from src.settings import BALL_FRICTION, HEIGHT, WIDTH
-from laya_controller.features import BALL_R, CAR_R, ENEMY_GOAL, OWN_GOAL, segment_distance
+from src.settings import BALL_FRICTION, CAR_FRICTION, HEIGHT, WIDTH
+from laya_controller.features import BALL_R, CAR_R, ENEMY_GOAL, OWN_GOAL, _shots, segment_distance
+from laya_controller.perception import angle_facts, ball_path, first_reachable, hit_direction, intercept
 
 MAX_SPEED = 7  # Car.max_speed
 DIRECTIONS = {1: (0, -1), 2: (0, 1), 3: (-1, 0), 4: (1, 0)}  # up, down, left, right
@@ -100,6 +101,18 @@ def rule_challenge(f):
     if f["opp_closer"]:
         return "challenge"
     return rule_shots(f)
+
+
+def rule_v6(f):
+    """v6 teacher: the challenge rules, judged at the moment the car can meet the ball (perception)."""
+    angle_facts(f)
+    if f["getting_past"]:
+        return "go_back"
+    if f["opp_first"]:
+        return "challenge"
+    if f["bank_clear_meet"] and not f["straight_clear_meet"]:
+        return "bank_shot"
+    return "shoot_straight"
 
 
 def act_shot(action, f):
@@ -235,6 +248,56 @@ def act_v4(action, f):
         return drive(predict_ball(f, 8), f, hold_boost=True)
     aim = f["aim_bank"] if action == "bank_shot" else ENEMY_GOAL
     return drive(_strike_v3(f, aim, smooth_run_up=True), f, hold_boost=True)
+
+
+# ---- v5: v4, but every move toward the ball meets it where it will be, and shots hit it at the
+# angle that sends it toward the aim (perception.py). f carries the mode's frictions (LayaController).
+
+
+def act_v5(action, f):
+    """v5 driving: the keys that carry out `action`."""
+    ball_friction = f.get("ball_friction", BALL_FRICTION)
+    car_friction = f.get("car_friction", CAR_FRICTION)
+    meet = None if action == "go_back" else intercept(f, ball_friction, car_friction)
+    if meet is None and action != "go_back":  # can't be reached within 1.5 s
+        path = ball_path(f["ball"], f["ball_v"], ball_friction)
+        if path and not (path[-1][2][0] < -1 and math.hypot(*path[-1][2]) > 3):
+            meet = path[-1]  # not racing toward your goal: go for where it ends up
+    if meet is None:  # going back, or the ball is getting past you fast: defend
+        return drive(_go_back_v5(f, ball_friction, car_friction), f, arrive=True)
+    _, ball, ball_v = meet
+    if action == "challenge":
+        return drive(ball, f, hold_boost=True)
+    at = dict(f, ball=ball, ball_v=ball_v)  # the moment the car meets the ball
+    lines = {
+        "shoot_straight": _hit_line(ball, ball_v, ENEMY_GOAL),
+        "bank_shot": _hit_line(ball, ball_v, _shots(ball, f["opp"])["aim_bank"]),
+    }
+    if not _against_wall(ball) and _lined_up(at, lines["shoot_straight"]):
+        action = "shoot_straight"  # finish the straight shot you are lined up for (v4)
+    return drive(_strike_v3(at, lines[action], smooth_run_up=True), f, hold_boost=True)
+
+
+def _hit_line(ball, ball_v, aim):
+    """A far point along the direction to hit the moving ball in, so it leaves toward `aim`."""
+    (nx, ny), _ = hit_direction(ball_v, _unit(aim[0] - ball[0], aim[1] - ball[1]))
+    return ball[0] + nx * 500, ball[1] + ny * 500
+
+
+def _go_back_v5(f, ball_friction, car_friction):
+    """Your own goal's side of the ball's path: the first point along it the car can get to in time."""
+    spots = []
+    for t, (px, py), _ in ball_path(f["ball"], f["ball_v"], ball_friction):
+        ux, uy = _unit(OWN_GOAL[0] - px, OWN_GOAL[1] - py)
+        spots.append((t, (max(px + ux * 90, 100), py + uy * 90)))
+    if not spots:  # it is about to go in: v4's go-back
+        return _go_back(f)
+    meet = first_reachable(f, spots, car_friction, slack=20)
+    target = meet[1] if meet else spots[-1][1]  # too late for all of them: where it ends up
+    (bx, by), (mx, my) = f["ball"], f["me"]
+    if segment_distance((bx, by), (mx, my), target) < CAR_R + BALL_R + 10:
+        return bx - 40, by + (85 if my >= by else -85)  # the ball is in the way: step round it
+    return target
 
 
 def _lined_up(f, aim):

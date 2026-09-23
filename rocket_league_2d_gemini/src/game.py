@@ -219,7 +219,10 @@ class Match:
         if model_name.startswith("Laya-"):
             # Laya bots answer the same predict() call as SB3 models; no model file to load
             model = LayaController(
-                model_name[len("Laya-") :], side="left" if player == "p1" else "right"
+                model_name[len("Laya-") :],
+                side="left" if player == "p1" else "right",
+                ball_friction=self.friction_ball,
+                car_friction=self.friction_car,
             )
             if player == "p1":
                 self.rl_model = model

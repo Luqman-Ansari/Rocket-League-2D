@@ -92,6 +92,7 @@ def facts(obs):
         "me": me,
         "me_v": (obs[2] * CAR_SPEED, obs[3] * CAR_SPEED),
         "opp": opp,
+        "opp_v": (obs[6] * CAR_SPEED, obs[7] * CAR_SPEED),
         "ball": ball,
         "ball_v": ball_v,
         # v2: shots and going back

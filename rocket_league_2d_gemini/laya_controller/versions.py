@@ -7,7 +7,7 @@ scripted rules; "balanced" is that averaged per action, so always giving one ans
 1 / actions. Probe results are the 16 made-up states tried while planning v2. "Play" is
 `bench play`: wins - losses in 2400 kickoffs vs the Basic bot in Soccer (noise about +-35), "Hockey"
 the same with --mode HOCKEY (noise about +-42). For reference, always shooting straight scores
-+69 / Hockey +43 with the v1 driving, +456 / +395 with v3, +436 / +617 with v4.
++69 / Hockey +43 with the v1 driving, +456 / +395 with v3, +436 / +617 with v4, +933 / +1169 with v5.
 """
 from dataclasses import dataclass
 from functools import partial
@@ -43,6 +43,13 @@ def _direction_then_angle(answers):
     return prompt.AIM_ACTIONS[aim["choice"]], aim["probabilities"][aim["choice"]]
 
 
+def _move_then_angle(answers):
+    move, aim = answers["move"], answers["aim"]
+    if move["choice"] != "attack":
+        return move["choice"], move["probabilities"][move["choice"]]
+    return prompt.AIM_ACTIONS[aim["choice"]], aim["probabilities"][aim["choice"]]
+
+
 def _move(move, f):
     return prompt.MOVE_NAMES.index(move)
 
@@ -54,6 +61,7 @@ V1_DIRECT = dict(teacher=motor.ball_direction, act=_move)
 V2 = dict(decide=_choice, act=motor.act_shot)
 V3 = dict(decide=_choice, act=motor.act_v3)
 V4 = dict(decide=_choice, act=motor.act_v4)
+V5 = dict(decide=_choice, act=motor.act_v5)
 
 VERSIONS = {
     # v1: 5 options, the whole game in 7 sentences
@@ -152,7 +160,7 @@ VERSIONS = {
         prompt.CHALLENGE_QUESTION, partial(prompt.shot_facts, race=True), teacher=motor.rule_challenge, **V4,
     ),
     "v4-challenge-focused": Version(
-        "v2-challenge-focused with the v4 driving. Play +477, Hockey +644 - best so far",
+        "v2-challenge-focused with the v4 driving. Play +477, Hockey +644",
         prompt.CHALLENGE_QUESTION,
         partial(prompt.shot_facts, race=True, focused=True),
         teacher=motor.rule_challenge,
@@ -162,6 +170,40 @@ VERSIONS = {
         "v2-split with the v4 driving. Play +411, Hockey +506 - cleanest hits, fewer wins",
         prompt.SPLIT_QUESTIONS, prompt.shot_facts, _direction_then_angle, motor.rule_shots, motor.act_v4,
     ),
+    # v5: the same questions and facts, with angle perception in the driving: meet the ball where it
+    # will be, hit a moving ball at the corrected angle, defend when it can't be reached (motor.act_v5)
+    "v5-shots": Version(
+        "v2-shots with the v5 driving. Not played yet (its rules: +892, Hockey +1054)",
+        prompt.SHOTS_QUESTION, prompt.shot_facts, teacher=motor.rule_shots, **V5,
+    ),
+    "v5-shots-focused": Version(
+        "v2-shots-focused with the v5 driving. Laya always shoots, so = always shoot_straight: +933, Hockey +1169",
+        prompt.SHOTS_QUESTION, partial(prompt.shot_facts, focused=True), teacher=motor.rule_shots, **V5,
+    ),
+    "v5-challenge": Version(
+        "v2-challenge with the v5 driving. Not played yet (its rules: +878, Hockey +939)",
+        prompt.CHALLENGE_QUESTION, partial(prompt.shot_facts, race=True), teacher=motor.rule_challenge, **V5,
+    ),
+    "v5-challenge-focused": Version(
+        "v2-challenge-focused with the v5 driving. Play +958, Hockey +1135 - best so far",
+        prompt.CHALLENGE_QUESTION,
+        partial(prompt.shot_facts, race=True, focused=True),
+        teacher=motor.rule_challenge,
+        **V5,
+    ),
+    "v5-split": Version(
+        "v2-split with the v5 driving. Play +868, Hockey +859",
+        prompt.SPLIT_QUESTIONS, prompt.shot_facts, _direction_then_angle, motor.rule_shots, motor.act_v5,
+    ),
+    # v6: the v5 driving, and Laya reads the angle perception too (prompt.angle_facts_text)
+    "v6-challenge-focused": Version(
+        "4 actions; reads whether the ball is getting past you, who gets to it first, and the shots where you meet it. Read 0.42, balanced 0.50 - never goes back or challenges",
+        prompt.ANGLE_QUESTION, prompt.angle_facts_text, _choice, motor.rule_v6, motor.act_v5,
+    ),
+    "v6-split": Version(
+        "the v6 facts, as a move question (go back / challenge / attack) and an angle question in one pass. Read 0.46, balanced 0.47 - reads challenge (72/85) but never go back, and banks nearly always",
+        prompt.ANGLE_SPLIT_QUESTIONS, prompt.angle_facts_text, _move_then_angle, motor.rule_v6, motor.act_v5,
+    ),
 }
 
-DEFAULT_VERSION = "v4-challenge-focused"  # the one the game menu starts on
+DEFAULT_VERSION = "v5-challenge-focused"  # the one the game menu starts on: best in play so far

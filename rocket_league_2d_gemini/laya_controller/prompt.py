@@ -5,6 +5,8 @@ Once we fine-tune, this becomes the training format, so change it deliberately.
 """
 import json
 
+from laya_controller.perception import angle_facts
+
 FORMATS = ("sentences", "json", "raw")
 
 # Plans for the "tactics" design. Each description echoes the fact (features.py) that calls
@@ -106,6 +108,43 @@ def shot_facts(f, race=False, focused=False):
     if focused:
         return " ".join([position, heading] if f["ahead"] and f["heading"] == "toward" else shots)
     return " ".join([position, heading, *shots])
+
+
+# ---- v6: Laya also reads the angle perception (perception.angle_facts): whether the ball is getting
+# past you, who gets to it first, and which shots are open where the car meets it.
+
+ANGLE = {
+    "shoot_straight": "the straight path to the goal is clear",
+    "bank_shot": "the straight path is blocked and the bank shot off the wall is clear",
+    "go_back": "the ball is getting past you toward your goal",
+    "challenge": "the opponent will get to the ball first",
+}
+ANGLE_QUESTION = {"decision": {"type": "choice", "instructions": V2_INSTRUCTIONS, "criteria": ANGLE}}
+ANGLE_SPLIT_QUESTIONS = {
+    "move": {
+        "type": "choice",
+        "instructions": V2_INSTRUCTIONS,
+        "criteria": {
+            "go_back": ANGLE["go_back"],
+            "challenge": ANGLE["challenge"],
+            "attack": "you will get to the ball first",
+        },
+    },
+    "aim": SPLIT_QUESTIONS["aim"],
+}
+
+
+def angle_facts_text(f):
+    """v6 state, only the needed facts: the getting-past sentence on its own, or else the shots
+    and the race, judged where the car meets the ball."""
+    angle_facts(f)
+    if f["getting_past"]:
+        return "The ball is getting past you toward your goal."
+    return " ".join([
+        f"The straight path to the goal is {'clear' if f['straight_clear_meet'] else 'blocked'}.",
+        f"The bank shot off the wall is {'clear' if f['bank_clear_meet'] else 'blocked'}.",
+        "The opponent will get to the ball first." if f["opp_first"] else "You will get to the ball first.",
+    ])
 
 
 def describe(f, fmt="sentences"):
