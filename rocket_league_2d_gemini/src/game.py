@@ -344,14 +344,15 @@ class Match:
                     self._reset_positions()
 
     def _calculate_time_left(self):
-        """Calculate remaining time."""
-        if self.game_state in ["PLAYING", "GAMEOVER"]:
+        """Calculate remaining time (frozen while paused)."""
+        if self.game_state == "PAUSED":
+            current_ticks = self.paused_at_ticks
+        else:
             current_ticks = pygame.time.get_ticks()
-            time_elapsed = (
-                current_ticks - self.start_ticks - self.total_pause_duration
-            ) / 1000
-            return max(0, self.duration - time_elapsed)
-        return 0
+        time_elapsed = (
+            current_ticks - self.start_ticks - self.total_pause_duration
+        ) / 1000
+        return max(0, self.duration - time_elapsed)
 
     def _update_gameplay(self):
         """Update game entities and physics."""
