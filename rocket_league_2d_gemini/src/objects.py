@@ -95,13 +95,23 @@ class SimpleAICar(Car):
 
 class TrainedAICar(Car):
     """The Reinforcement Learning Agent."""
+    # Held keys arrive as a tuple (up, down, left, right, boost); these are its indexes
+    KEY_INDEX = {'up': 0, 'down': 1, 'left': 2, 'right': 3, 'boost': 4}
+
     def __init__(self, x, y, color, texture_key, friction=CAR_FRICTION):
-        super().__init__(x, y, color, None, texture_key, friction)
+        super().__init__(x, y, color, self.KEY_INDEX, texture_key, friction)
 
     def apply_ai_action(self, action):
         """
         0: Do Nothing, 1: Up, 2: Down, 3: Left, 4: Right
+        or the keys a player could hold: (up, down, left, right, boost), moved exactly like a
+        player's car (Car.handle)
         """
+        if isinstance(action, tuple):
+            self.handle(action)
+            self.update()
+            return
+
         ax = ay = 0
         self.boost_active = False # Keep it simple for now
         
