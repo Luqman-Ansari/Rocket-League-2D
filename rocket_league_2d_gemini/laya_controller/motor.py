@@ -115,6 +115,17 @@ def rule_v6(f):
     return "shoot_straight"
 
 
+def rule_like_laya(f):
+    """Laya's own answers to the challenge-focused state (all 13 texts it can take), as code: shoot,
+    unless only the bank shot is clear - then bank, or challenge if the opponent is closer.
+    It never goes back, even when the state is the go-back text."""
+    if f["ahead"] and f["heading"] == "toward":  # the go-back text: Laya still says shoot
+        return "shoot_straight"
+    if f["bank_clear"] and not f["straight_clear"]:
+        return "challenge" if f["opp_closer"] else "bank_shot"
+    return "shoot_straight"
+
+
 def act_shot(action, f):
     """v2 driving: the move toward where `action` wants the car to be."""
     if action == "shoot_straight":

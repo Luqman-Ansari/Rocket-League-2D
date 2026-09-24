@@ -53,7 +53,10 @@ class LayaController:
         f.update(self.frictions)
         self._collect()
         if self._frame % self.every == 0:
-            self._decide(self.v.describe(f))
+            if self.v.questions is None:  # code only: the rules decide, and Laya is never loaded
+                self.choice = self.v.teacher(f)
+            else:
+                self._decide(self.v.describe(f))
         self._frame += 1
 
         if self.choice is None:  # Laya is still loading, or failed: this version's rules drive
@@ -61,7 +64,7 @@ class LayaController:
             self.label = f"rules: {action}"
         else:
             action = self.choice
-            self.label = f"{action} {self.prob:.0%}"
+            self.label = f"{action} {self.prob:.0%}" if self.v.questions else f"code: {action}"
         return world_action(self.v.act(action, f), self.side), None
 
     def _decide(self, text):

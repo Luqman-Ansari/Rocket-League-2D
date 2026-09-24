@@ -19,7 +19,7 @@ from laya_controller import motor, prompt
 @dataclass(frozen=True)
 class Version:
     note: str  # what it tries, and what we found
-    questions: dict  # what Laya is asked; all answered in one forward pass
+    questions: dict  # what Laya is asked; all answered in one forward pass. None: code only, the teacher decides
     describe: Callable  # facts -> the state text Laya reads
     decide: Callable  # Laya's answers -> (action, probability)
     teacher: Callable  # facts -> the scripted action: drives while Laya loads, bench.py's reference
@@ -194,6 +194,12 @@ VERSIONS = {
     "v5-split": Version(
         "v2-split with the v5 driving. Play +868, Hockey +859",
         prompt.SPLIT_QUESTIONS, prompt.shot_facts, _direction_then_angle, motor.rule_shots, motor.act_v5,
+    ),
+    # code only: v5-challenge-focused's decisions without Laya - its answers to every text that
+    # version can show, written as code (motor.rule_like_laya). The model is never loaded.
+    "v5-code": Version(
+        "v5-challenge-focused's decisions as code, no Laya model. Play +958, Hockey +1135 - the same games as v5-challenge-focused; head to head they tie exactly",
+        None, None, None, motor.rule_like_laya, motor.act_v5,
     ),
     # v6: the v5 driving, and Laya reads the angle perception too (prompt.angle_facts_text)
     "v6-challenge-focused": Version(

@@ -53,6 +53,9 @@ def read(names, n, confusion):
     print(f"{'version':22} {'agrees':>6} {'majority':>8} {'balanced':>8}  {'Laya picks most':28} {'calls':>5} {'ms p50':>6}")
     for name in names:
         v = VERSIONS[name]
+        if v.questions is None:
+            print(f"{name:22} code only - nothing for Laya to read", flush=True)
+            continue
         expected = [v.teacher(f) for f in states]
         majority = collections.Counter(expected).most_common(1)[0][1] / n
         answers = {}  # one call per distinct text
