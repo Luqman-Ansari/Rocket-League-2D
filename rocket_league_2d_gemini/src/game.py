@@ -562,7 +562,7 @@ class Match:
         for car, model in ((self.p1, self.rl_model), (self.p2, self.rl_model_p2)):
             label = getattr(model, "label", None)
             if label:
-                txt = assets_loader.FONTS["body"].render(label, True, WHITE)
+                txt = assets_loader.FONTS["body"].render(label, True, BLACK)
                 self.screen.blit(txt, (int(car.x) - txt.get_width() // 2, int(car.y) - 55))
 
     def _draw_hud(self):
